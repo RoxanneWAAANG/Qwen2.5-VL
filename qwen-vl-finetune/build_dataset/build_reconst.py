@@ -97,7 +97,7 @@ def transform(file_path: Path) -> dict:
         "from": "human",
         "value": (
             f"HealthGPT output: reconstructed image saved as {image_filename}\n\n"
-            f"Answer my first request: {user_prompt['value']}"
+            f"Answer my first request: {instruction}\n\n"
         )
     }
 
@@ -107,7 +107,8 @@ def transform(file_path: Path) -> dict:
         "from": "gpt",
         "thoughts": "The HealthGPT tool has completed the reconstruction. Now I can answer it based on its output.",
         "actions": [],
-        "value": f"<image>\n{final_response}"
+        # "value": f"<image>\n{final_response}"
+        "value": f"{final_response}"
     }
 
     return {

@@ -4,7 +4,18 @@ from typing import Dict, List, Optional, Sequence
 import datasets
 import torch
 import torch.nn as nn
-from flash_attn.flash_attn_interface import flash_attn_varlen_func
+# from flash_attn.flash_attn_interface import flash_attn_varlen_func
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_func
+    HAS_FLASH_ATTN = True
+    print("Flash Attention available")
+except ImportError:
+    HAS_FLASH_ATTN = False
+    print("Flash Attention not available, will use standard attention")
+    def flash_attn_varlen_func(*args, **kwargs):
+        raise NotImplementedError("Flash Attention not available")
+    
 from torch.utils.data import DataLoader, Sampler
 from transformers import Trainer
 from transformers.cache_utils import Cache

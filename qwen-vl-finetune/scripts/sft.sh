@@ -6,20 +6,19 @@
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
 NNODES=${WORLD_SIZE:-1}
-NPROC_PER_NODE=1
+NPROC_PER_NODE=2
 
 # ----------------------------
 # DeepSpeed configuration
 # ----------------------------
-# switched to a Zero-2 + offload config that works well with LoRA
-deepspeed=./scripts/zero3_offload.json
 # deepspeed=./scripts/deepspeed_zero2_offload.json
+deepspeed=./scripts/zero3_offload.json
 
 # ----------------------------
 # Model configuration
 # ----------------------------
 # llm=Qwen/Qwen2.5-VL-7B-Instruct
-llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-7B-Instruct'
+llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-3B-Instruct'
 
 # ----------------------------
 # Training hyperparameters
