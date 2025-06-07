@@ -1,30 +1,49 @@
 #!/bin/bash
 
-# Distributed training configuration
+# ----------------------------
+# Distributed training config
+# ----------------------------
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
 NNODES=${WORLD_SIZE:-1}
+NPROC_PER_NODE=1
 
+# ----------------------------
 # DeepSpeed configuration
-deepspeed=./scripts/zero3.json
+# ----------------------------
+# switched to a Zero-2 + offload config that works well with LoRA
+deepspeed=./scripts/zero3_offload.json
+# deepspeed=./scripts/deepspeed_zero2_offload.json
 
+# ----------------------------
 # Model configuration
-llm=Qwen/Qwen2.5-VL-3B-Instruct  # Using HuggingFace model ID
+# ----------------------------
+# llm=Qwen/Qwen2.5-VL-7B-Instruct
+llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-7B-Instruct'
 
+# ----------------------------
 # Training hyperparameters
-lr=2e-7
+# ----------------------------
+lr=2e-5
 batch_size=4
 grad_accum_steps=4
 
+# ----------------------------
 # Training entry point
-entry_file=qwenvl/train/train_qwen.py
+# ----------------------------
+entry_file=./qwenvl/train/train_qwen.py
 
-# Dataset configuration (replace with public dataset names)
-datasets=public_dataset1,public_dataset2
+# ----------------------------
+# Dataset config
+# ----------------------------
+datasets=healthgpt_reconstruction
 
-# Output configuration
-run_name="qwen2vl-baseline"
+# ----------------------------
+# Output config
+# ----------------------------
+run_name="qwen2vl-lora-baseline"
 output_dir=./output
+logging_dir="${output_dir}/tensorboard_logs"
 
 # Training arguments
 args="
@@ -37,6 +56,8 @@ args="
     --tune_mm_llm True \
     --bf16 \
     --output_dir ${output_dir} \
+    --logging_dir ${logging_dir} \
+    --report_to tensorboard \
     --num_train_epochs 0.5 \
     --per_device_train_batch_size ${batch_size} \
     --per_device_eval_batch_size $((batch_size*2)) \
@@ -45,7 +66,7 @@ args="
     --min_pixels 784 \
     --eval_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 1000 \
+    --save_steps 400 \
     --save_total_limit 1 \
     --learning_rate ${lr} \
     --weight_decay 0 \
@@ -57,10 +78,11 @@ args="
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --run_name ${run_name} \
-    --report_to wandb"
+    "
 
 # Launch training
 torchrun --nproc_per_node=${NPROC_PER_NODE} \
          --master_addr=${MASTER_ADDR} \
          --master_port=${MASTER_PORT} \
          ${entry_file} ${args}
+

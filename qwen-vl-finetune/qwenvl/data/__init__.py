@@ -1,6 +1,11 @@
 import re
 
 # Define placeholders for dataset paths
+HEALTHGPT_RECONSTRUCTION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/healthgpt_reconstruct_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
 CAMBRIAN_737K = {
     "annotation_path": "PATH_TO_CAMBRIAN_737K_ANNOTATION",
     "data_path": "",
@@ -32,6 +37,7 @@ data_dict = {
     "mp_doc": MP_DOC,
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
+    "healthgpt_reconstruction": HEALTHGPT_RECONSTRUCTION,
 }
 
 

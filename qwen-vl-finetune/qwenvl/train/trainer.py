@@ -185,7 +185,8 @@ def print_trainable_parameters(self) -> None:
     """
     # Check embed_tokens
     is_embed_trainable = any(
-        param.requires_grad for param in self.embed_tokens.parameters()
+        # param.requires_grad for param in self.embed_tokens.parameters()
+        param.requires_grad for param in getattr(self, 'embed_tokens', getattr(self, 'model', self)).parameters()
     )
     print(f"LLM Module - Embed Tokens Trainable: {is_embed_trainable}")
 

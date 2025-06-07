@@ -19,7 +19,12 @@ import torch
 from torch.utils.data import Dataset
 from PIL import Image
 from decord import VideoReader
-from torchcodec.decoders import VideoDecoder
+# from torchcodec.decoders import VideoDecoder
+try:
+    from torchcodec.decoders import VideoDecoder
+except ImportError:
+    VideoDecoder = None
+
 import transformers
 
 from . import data_list
@@ -284,7 +289,7 @@ class LazySupervisedDataset(Dataset):
         return self.process_video_frames(video, frame_idx, video_length)
 
     def video_torchcodec(self, video_file):
-        device = "cpu"  # or e.g. "cuda"
+        device = "cuda"  # or e.g. "cuda"
         decoder = VideoDecoder(video_file, device=device)
         total_frames = decoder.metadata.num_frames
         avg_fps = decoder.metadata.average_fps

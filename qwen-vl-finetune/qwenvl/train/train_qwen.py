@@ -151,7 +151,7 @@ def train(attn_implementation="flash_attention_2"):
 
     if torch.distributed.get_rank() == 0:
         model.visual.print_trainable_parameters()
-        model.model.print_trainable_parameters()
+        # model.model.print_trainable_parameters()
     
     if data_args.data_packing:
         data_module = make_supervised_data_module_packed(tokenizer=tokenizer, data_args=data_args)
