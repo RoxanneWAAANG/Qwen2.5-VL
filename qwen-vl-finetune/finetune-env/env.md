@@ -64,6 +64,8 @@ if torch.cuda.is_available():
 
 ## Step 4 -- Install Transformers
 
+Here I refer to issue from official repo: https://github.com/QwenLM/Qwen2.5-VL/issues/936.
+
 ```bash
 pip install accelerate==1.8.0.dev0
 pip install transformers==4.49.0
