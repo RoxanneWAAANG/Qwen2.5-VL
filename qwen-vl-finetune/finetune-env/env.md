@@ -26,7 +26,7 @@ pip install --upgrade pip setuptools wheel
 # 检查可用的CUDA版本
 ls /usr/local/cuda*/bin/nvcc
 
-# 设置CUDA_HOME (根据你的系统选择12.4或12.6)
+# 设置CUDA_HOME (根据系统选择12.4或12.6)
 # replace the path after export CUDA_HOME=
 export CUDA_HOME=/usr/local/cuda-12.4
 export PATH=$CUDA_HOME/bin:$PATH
