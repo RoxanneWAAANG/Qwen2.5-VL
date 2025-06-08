@@ -7,6 +7,21 @@ This repository provides a training framework for Qwen VL models. The are two st
 
 ## Repository Structure
 
+### `build_dataset/`
+- Script for building tool-use instruction dataset.
+- `tool_instruct`: Built dataset.
+
+### `finetune-env/`
+- `env.md`: Instruction of how to setup environment.
+- `qwenvl-env.yml`: Saved environment for fine-tune.
+- `test_env.py`: Used to test dependencies of your environment.
+- `requirements.txt`: All required dependencies.
+
+### `scripts/`
+- `infer_qwen2_5_vl.py`: Inference script.
+- `sft.sh`: Fine-tune script on Qwen-2.5-VL-3B-Instruct.
+- `download_weights.py`: Used to download pretrain weights.
+
 The `qwenvl` directory contains the following components:
 
 ### `train/`
