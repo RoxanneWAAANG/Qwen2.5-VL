@@ -170,17 +170,16 @@ def load_deepeyenet() -> list:
                        meta.get("keywords") or "").strip()
 
         records.append({
-            "image_path": full_path,
+            "image_path": full_path,  # Changed: removed list wrapper since we're storing single path
             "report": report_text
         })
     return records
 
-def transform(file_path: Path, record: dict, idx: int) -> dict:
-    image_id = file_path.stem
-    image_filename = file_path.name
-    file_name = str(file_path)
-
-    ground_truth = record["report"]
+def transform(image_path: Path, record: dict, idx: int) -> dict:
+    """Transform a record into the final format using the actual image path."""
+    image_id = image_path.stem
+    image_filename = image_path.name
+    file_name = str(image_path)
 
     # 1) Original human prompt
     instruction = random.choice(instruction_templates)
@@ -204,6 +203,7 @@ def transform(file_path: Path, record: dict, idx: int) -> dict:
         "value": "Calling SpecialistVLMs to generate the ophthalmic report..."
     }
 
+    ground_truth = record["report"]
     tool_output = {
         "from": "human",
         "value": (

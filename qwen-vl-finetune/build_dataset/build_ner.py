@@ -5,7 +5,7 @@ from tqdm import tqdm
 INPUT_FILE = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/RaTE-NER/train_span.json"
 OUTPUT_FILE = "./tool_instruct/rate_ner_dataset.jsonl"
 IMAGE_BASE_PATH = "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images"
-DUMMY_IMAGE_NAME = "dummy_img.png"
+DUMMY_IMAGE_NAME = "dummy_medical_ner.jpg"
 MAX_SAMPLES = 5000
 
 prompt_templates = [

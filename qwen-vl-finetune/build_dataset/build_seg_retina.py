@@ -176,7 +176,7 @@ def transform(file_path: Path) -> dict:
 
     # 4) Final assistant response with formatted result
     # Select a random response template and format it with the output image reference
-    final_response = random.choice(vessel_segmentation_responses).format(mask=".")
+    final_response = random.choice(vessel_segmentation_responses).format(mask="<output_image>")
     assistant_reply = {
         "from": "gpt",
         "thoughts": "The IterNet tool has completed the retinal vessel segmentation task and generated a binary mask. Now I can provide the formatted result to the user.",

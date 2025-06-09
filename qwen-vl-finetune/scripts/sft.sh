@@ -17,19 +17,15 @@ deepspeed=./scripts/zero3_offload.json
 # ----------------------------
 # Model configuration
 # ----------------------------
-llm='weights/Qwen2.5-VL-7B-Instruct'
+# llm=Qwen/Qwen2.5-VL-7B-Instruct
+llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-7B-Instruct'
 
 # ----------------------------
 # Training hyperparameters
 # ----------------------------
-lr=1e-5
-batch_size=1
-grad_accum_steps=128
-epochs=1.0
-
-# Effective batch size = 1 * 2 * 128 = 256
-# Steps per epoch = 212,449 / 256 = 830 steps
-# Total steps = 830 steps
+lr=2e-5
+batch_size=4
+grad_accum_steps=4
 
 # ----------------------------
 # Training entry point
@@ -39,30 +35,19 @@ entry_file=./qwenvl/train/train_qwen.py
 # ----------------------------
 # Dataset config
 # ----------------------------
-datasets=single_tool_multi_round,multi_tool_multi_round,multi_tool_single_round
+datasets=healthgpt_reconstruction,healthgpt_superres,internet_segmentation,llava_rad_report_generation,llava_summarization,pmc_llama_qa,rate_ner,svlms_report_generation,ultrasam_segmentation
 
 # ----------------------------
 # Output config
 # ----------------------------
-output_dir=/data3/qwen-weights/output_7b_test
-logging_dir="${output_dir}/tensorboard_logs"
 run_name="qwen2vl-lora-baseline"
-
-resume_flag=False
-
-# ----------------------------
-# Calculate dynamic save steps
-# ----------------------------
-# Save every ~10% of total steps
-total_samples=212449
-effective_bs=$(( NPROC_PER_NODE * batch_size * grad_accum_steps ))   # 2*1*128 = 256
-total_steps=$(( total_samples / effective_bs ))                      # 830
-save_steps=$(( total_steps / 4 ))                                    # 207
+output_dir=./output
+logging_dir="${output_dir}/tensorboard_logs"
 
 # Training arguments
 args="
     --deepspeed ${deepspeed} \
-    --model_name_or_path ${llm} \
+    --model_name_or_path "${llm}" \
     --dataset_use ${datasets} \
     --data_flatten True \
     --tune_mm_vision False \
@@ -72,28 +57,26 @@ args="
     --output_dir ${output_dir} \
     --logging_dir ${logging_dir} \
     --report_to tensorboard \
-    --num_train_epochs ${epochs} \
+    --num_train_epochs 0.5 \
     --per_device_train_batch_size ${batch_size} \
+    --per_device_eval_batch_size $((batch_size*2)) \
     --gradient_accumulation_steps ${grad_accum_steps} \
-    --max_pixels 25600 \
-    --min_pixels 256 \
-    --eval_strategy no \
-    --save_strategy steps \
-    --save_steps ${save_steps} \
-    --save_total_limit 5 \
+    --max_pixels 50176 \
+    --min_pixels 784 \
+    --eval_strategy "no" \
+    --save_strategy "steps" \
+    --save_steps 400 \
+    --save_total_limit 1 \
     --learning_rate ${lr} \
-    --weight_decay 0.01 \
-    --warmup_ratio 0.1 \
-    --max_grad_norm 1.0 \
-    --lr_scheduler_type cosine \
-    --logging_steps 10 \
-    --model_max_length 20607 \
+    --weight_decay 0 \
+    --warmup_ratio 0.03 \
+    --max_grad_norm 1 \
+    --lr_scheduler_type "cosine" \
+    --logging_steps 1 \
+    --model_max_length 8192 \
     --gradient_checkpointing True \
-    --remove_unused_columns False \
+    --dataloader_num_workers 4 \
     --run_name ${run_name} \
-    --seed 42 \
-    --data_seed 42 \
-    --resume_from_checkpoint ${resume_flag} \
     "
 
 # Launch training
