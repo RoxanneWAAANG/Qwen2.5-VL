@@ -6,8 +6,57 @@ HEALTHGPT_RECONSTRUCTION = {
     "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
 }
 
+HEALTHGPT_SUPERRES = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/healthgpt_superres_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
+INTERNET_SEGMENTATION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/internet_seg_dataset.jsonl",
+    "data_path": "/home/jack/.cache/kagglehub/datasets/deathtrooper/multichannel-glaucoma-benchmark-dataset/versions/10/full-fundus/full-fundus",
+}
+
+LLAVA_RAD_REPORT_GENERATION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/llava_rad_rg_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
+LLAVA_SUMMARIZATION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/llava_sum_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images",
+}
+
+PMC_LLAMA_QA = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/pmc_llama_medqa_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images",
+}
+
+RATE_NER = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/rate_ner_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images",
+}
+
+SVLMS_REPORT_GENERATION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/svlms_fundus_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/deepeyenet/deepeyenet/eyenet0420/train_set",
+}
+
+ULTRASAM_SEGMENTATION = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/ultrasam_seg_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/UltraSam/dataset/BrEaST/BrEaST-Lesions_USG-images_and_masks-Dec-15-2023/images",
+}
+
+
 data_dict = {
     "healthgpt_reconstruction": HEALTHGPT_RECONSTRUCTION,
+    "healthgpt_superres": HEALTHGPT_SUPERRES,
+    "internet_segmentation": INTERNET_SEGMENTATION,
+    "llava_rad_report_generation": LLAVA_RAD_REPORT_GENERATION,
+    "llava_summarization": LLAVA_SUMMARIZATION,
+    "pmc_llama_qa": PMC_LLAMA_QA,
+    "rate_ner": RATE_NER,
+    "svlms_report_generation": SVLMS_REPORT_GENERATION,
+    "ultrasam_segmentation": ULTRASAM_SEGMENTATION,
 }
 
 
