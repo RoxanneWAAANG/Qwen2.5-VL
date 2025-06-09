@@ -4,7 +4,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 IMAGE_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k")
-
 OUTPUT_FILE = Path("./tool_instruct/healthgpt_reconstruct_dataset.jsonl")
 
 instruction_templates = [
@@ -127,7 +126,6 @@ def transform(file_path: Path) -> dict:
 def build_dataset(n_samples: int = 5000, seed: int = 42, output_path: Path = OUTPUT_FILE) -> None:
     """Generate the dataset by sampling images from IMAGE_DIR and save as JSONL."""
     random.seed(seed)
-    # Gather all image files (jpg, png)
     all_images = [p for p in IMAGE_DIR.iterdir() if p.is_file() and p.suffix.lower() in {'.jpg', '.jpeg', '.png'}]
     if len(all_images) < n_samples:
         raise ValueError(f"Not enough images in {IMAGE_DIR}: found {len(all_images)}, need {n_samples}")
