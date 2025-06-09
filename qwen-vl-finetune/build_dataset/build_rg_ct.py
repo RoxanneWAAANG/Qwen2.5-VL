@@ -3,8 +3,10 @@ import random
 from pathlib import Path
 from tqdm import tqdm
 
+IMAGE_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k")
 INPUT_FILE  = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/annotation.json")
 OUTPUT_FILE = Path("./tool_instruct/llava_rad_rg_dataset.jsonl")
+
 MODALITIES = ["X-RAY", "CT", "MRI", "US"]
 
 instruction_templates = [
@@ -139,11 +141,20 @@ answer_templates = [
 
 def transform(record: dict, idx: int) -> dict:
     """Convert one raw record to conversation format."""
-    image_path = record["image_path"][0]
+    image_id_raw = record["image_path"][0]
+    image_id = image_id_raw.strip("/").split("/")[-1].split(".")[0]
+    image_path = image_id + ".jpg"
+    print(f"Processing record {idx + 1}: {image_path}")
+    file_name = str(image_path)
+
     report_text = record["report"]
 
     modality = random.choice(MODALITIES)
-    user_prompt = random.choice(instruction_templates).format(modality=modality)
+    instruction = random.choice(instruction_templates).format(modality=modality)
+    user_prompt = {
+        "from": "human",
+        "value": f"<image>\n\n{instruction}"
+    }
 
     tool_call = {
         "from": "gpt",
@@ -151,10 +162,21 @@ def transform(record: dict, idx: int) -> dict:
         "actions": [
             {
                 "API_name": "LLaVA-Rad",
-                "API_params": {"image_path": image_path}
+                "API_params": {
+                    "task": "report_generation",
+                    "image_path": image_path
+                }
             }
         ],
         "value": "Calling LLaVA-Rad to generate the radiology report..."
+    }
+
+    tool_output = {
+        "from": "human",
+        "value": (
+            f"LLaVA-Rad output: {report_text}\n\n"
+            f"Answer my first request: {instruction}\n\n"
+        )
     }
 
     friendly_reply = random.choice(answer_templates).format(
@@ -162,17 +184,19 @@ def transform(record: dict, idx: int) -> dict:
     )
     assistant_reply = {
         "from": "gpt",
+        "thoughts": "The LLaVA-Rad tool has completed the report generation task. Now I can answer it based on its output.",
+        "actions": [],
         "value": friendly_reply
     }
 
     return {
-        "id": f"rad_sample_{idx}",
+        "image_id": image_id,
+        "image": image_path,
+        "file_name": file_name,
         "conversations": [
-            {
-                "from": "human",
-                "value": user_prompt
-            },
+            user_prompt,
             tool_call,
+            tool_output,
             assistant_reply
         ]
     }
