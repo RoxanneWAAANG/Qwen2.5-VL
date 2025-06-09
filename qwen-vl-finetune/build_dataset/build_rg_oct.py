@@ -6,6 +6,7 @@ from tqdm import tqdm
 BASE_DIR    = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/deepeyenet/deepeyenet")
 INPUT_FILE  = BASE_DIR / "DeepEyeNet_train.json"
 OUTPUT_FILE = Path("./tool_instruct/svlms_fundus_dataset.jsonl")
+IMAGE_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/deepeyenet/deepeyenet/eyenet0420/train_set")
 
 instruction_templates = [
     "Can you write a clinical report based on this OCT scan?",
@@ -169,15 +170,24 @@ def load_deepeyenet() -> list:
                        meta.get("keywords") or "").strip()
 
         records.append({
-            "image_path": [full_path],
+            "image_path": full_path,
             "report": report_text
         })
     return records
 
-def transform(record: dict, idx: int) -> dict:
-    user_prompt = instruction_templates[idx % len(instruction_templates)].format(
-        modality='OCT'
-    )
+def transform(file_path: Path, record: dict, idx: int) -> dict:
+    image_id = file_path.stem
+    image_filename = file_path.name
+    file_name = str(file_path)
+
+    ground_truth = record["report"]
+
+    # 1) Original human prompt
+    instruction = random.choice(instruction_templates)
+    user_prompt = {
+        "from": "human",
+        "value": f"<image>\n\n{instruction}"
+    }
 
     tool_call = {
         "from": "gpt",
@@ -185,20 +195,39 @@ def transform(record: dict, idx: int) -> dict:
         "actions": [
             {
                 "API_name": "SpecialistVLMs",
-                "API_params": {"image_path": record["image_path"][0]}
+                "API_params": {
+                    "task": "report_generation",
+                    "image_path": image_filename
+                }
             }
         ],
         "value": "Calling SpecialistVLMs to generate the ophthalmic report..."
     }
 
-    final_reply = random.choice(answer_templates).format(report=record["report"])
-    assistant_reply = {"from": "gpt", "value": final_reply}
+    tool_output = {
+        "from": "human",
+        "value": (
+            f"SpecialistVLMs output: {ground_truth}\n\n"
+            f"Answer my first request: {instruction}\n\n"
+        )
+    }
 
+    final_reply = random.choice(answer_templates)
+    assistant_reply = {
+        "from": "gpt",
+        "thoughts": "The SpecialistVLMs tool has completed the report generation task. Now I can answer it based on its output.",
+        "actions": [],
+        "value": f"{final_reply}".format(report=record["report"])
+    }
+    
     return {
-        "id": f"fundus_sample_{idx}",
+        "image_id": image_id,
+        "image": image_filename,
+        "file_name": file_name,
         "conversations": [
-            {"from": "human", "value": user_prompt},
+            user_prompt,
             tool_call,
+            tool_output,
             assistant_reply
         ]
     }
@@ -206,6 +235,7 @@ def transform(record: dict, idx: int) -> dict:
 def build_dataset(n_samples: int = 5000,
                   seed: int = 42,
                   output_path: Path = OUTPUT_FILE) -> None:
+    """Build the dataset with proper image path handling."""
     random.seed(seed)
     all_records = load_deepeyenet()
     total = min(len(all_records), n_samples)
@@ -214,7 +244,15 @@ def build_dataset(n_samples: int = 5000,
     with output_path.open("w", encoding="utf-8") as fout:
         for idx, rec in enumerate(tqdm(all_records[:total],
                                        desc=f"Building {total} OCT samples")):
-            json.dump(transform(rec, idx), fout, ensure_ascii=False)
+            # FIXED: Use the actual image path from the record, not the fixed IMAGE_DIR
+            actual_image_path = Path(rec["image_path"])
+            
+            # Verify the image file exists before processing
+            if not actual_image_path.exists():
+                print(f"Warning: Image file not found: {actual_image_path}")
+                continue
+                
+            json.dump(transform(actual_image_path, rec, idx), fout, ensure_ascii=False)
             fout.write("\n")
 
     print(f"Wrote {total} records to '{output_path}'")
