@@ -2,49 +2,53 @@ import json
 import random
 from tqdm import tqdm
 
-INPUT_FILE   = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/RaTE-NER/train_span.json"
-OUTPUT_FILE  = "./tool_instruct/rate_ner_dataset.jsonl"
-MAX_SAMPLES  = 5000
+INPUT_FILE = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/RaTE-NER/train_span.json"
+OUTPUT_FILE = "./tool_instruct/rate_ner_dataset.jsonl"
+IMAGE_BASE_PATH = "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images"
+DUMMY_IMAGE_NAME = "dummy_img.png"
+MAX_SAMPLES = 5000
 
-instruction_templates = [
-    "Perform medical named-entity recognition on the following radiology note. Label each token with its entity type (e.g., Anatomy, Abnormality, Disease):",
-    "Extract and classify all medical entities in this radiology report. For each token, specify whether it's Anatomy, Abnormality, or Disease:",
-    "Identify anatomical structures, abnormalities, and diseases in the text below. Return a token-level annotation indicating the entity type:",
-    "What medical entities are in this phrase?",
-    "Tag this short clinical description with entity types.",
-    "Can you identify any Anatomy, Abnormality, or Disease terms here?",
-    "Which words in this sentence are medical entities?",
-    "Is there any disease or anatomy mentioned in this phrase?",
-    "Mark up each word with its entity class.",
-    "Highlight the medical terms in this sentence.",
-    "Give me a token-level tag for this snippet.",
-    "Annotate the following text with medical entity tags.",
-    "Show which tokens are anatomy, abnormalities, or diseases in this sample.",
-    "Help me understand entity types in this short report.",
-    "Label the medical categories of words in this example sentence.",
-    "Can you annotate this phrase for medical NLP training?",
-    "Review this sentence and tag all medical terms by type.",
-    "Identify token-level entities in this clinical line.",
-    "Break down this sentence into entity-labeled tokens.",
-    "Do a quick NER pass on this short clinical description.",
-    "Mark entities in this expression as Anatomy/Abnormality/Disease.",
-    "Tag this input using medical named-entity recognition.",
-    "Can you tell what's anatomy or disease in this line?",
-    "Mark each word in this short note with its medical meaning.",
-    "Scan this sentence for anatomy, diseases, or abnormalities.",
-    "Go through this line and label any clinical entities.",
-    "Assign entity types to the words in this phrase.",
-    "Quickly tag medical terms in this snippet.",
-    "Label all words that are clinical entities: Anatomy, Abnormality, Disease.",
-    "For each word, give a label: Anatomy, Abnormality, or Disease.",
-    "Identify and tag any relevant medical terms.",
-    "Please classify tokens by medical entity type.",
-    "Detect entity types in the following sentence.",
-    "Tag this entry for Anatomy, Abnormality, or Disease.",
-    "Classify words in this input as clinical entities.",
-    "Run a quick entity classification on this phrase.",
-    "Perform a light NER tagging on this sentence.",
-    "Classify each term as anatomy, abnormality, or disease.",
+prompt_templates = [
+    "<image>\nPlease identify and label all medical entities in the following text.",
+    "<image>\nCan you extract and classify the medical entities from this clinical note?",
+    "<image>\nHelp me identify the anatomical terms, abnormalities, and diseases in this text.",
+    "<image>\nPlease perform named entity recognition on this medical sentence.",
+    "<image>\nIdentify all medical entities and their types in the given text.",
+    "<image>\nExtract and categorize the medical terms from this clinical sentence.",
+    "<image>\nCan you label the entities in this medical text with their appropriate categories?",
+    "<image>\nPlease recognize and classify all medical entities present in this sentence.",
+    "<image>\nIdentify medical entities including anatomy, abnormalities, and diseases.",
+    "<image>\nPerform entity extraction on this clinical text.",
+    "<image>\nLabel all medical terms with their entity types in this sentence.",
+    "<image>\nCan you detect and classify medical entities from this clinical note?",
+    "<image>\nHelp me tag all medical entities in this text with their categories.",
+    "<image>\nPlease identify medical entities and assign appropriate labels.",
+    "<image>\nExtract named entities from this medical sentence and classify them.",
+    "<image>\nRecognize and categorize all medical terms in the following text.",
+    "<image>\nCan you perform medical NER on this clinical sentence?",
+    "<image>\nIdentify and label medical entities including anatomical and pathological terms.",
+    "<image>\nPlease extract medical entities and their classifications from this text.",
+    "<image>\nTag all relevant medical entities in this clinical sentence.",
+    "<image>\nCan you identify medical terms and classify them by entity type?",
+    "<image>\nPerform named entity recognition focusing on medical terminology.",
+    "<image>\nLabel medical entities in this text with anatomy, abnormality, or disease tags.",
+    "<image>\nExtract and classify medical entities from this clinical documentation.",
+    "<image>\nPlease identify all medical entities and provide their entity types.",
+    "<image>\nRecognize medical terms and categorize them appropriately.",
+    "<image>\nCan you detect medical entities and assign proper classifications?",
+    "<image>\nHelp me label medical entities in this clinical text.",
+    "<image>\nIdentify and categorize medical terminology in this sentence.",
+    "<image>\nPerform medical entity extraction and classification on this text.",
+    "<image>\nPlease tag medical entities with their corresponding categories.",
+    "<image>\nExtract named entities focusing on medical and clinical terms.",
+    "<image>\nCan you identify and classify medical entities in this clinical note?",
+    "<image>\nLabel all medical terms with appropriate entity classifications.",
+    "<image>\nRecognize and categorize medical entities from this text.",
+    "<image>\nPlease perform entity recognition on this medical sentence.",
+    "<image>\nIdentify medical entities and assign them to proper categories.",
+    "<image>\nExtract and label medical terms from this clinical text.",
+    "<image>\nCan you detect and classify all medical entities present?",
+    "<image>\nHelp me identify and categorize medical terminology in this sentence.",
 ]
 
 answer_templates = [
@@ -90,64 +94,137 @@ answer_templates = [
     "Token-by-token entity mapping:\n{entities}",
 ]
 
-LABEL_MAP = {"Anatomy": "Anatomy", "Abnormality": "Abnormality", "Disease": "Disease"}
-
-def spans_to_entities(tokens, spans):
-    """
-    Convert span indices to a readable bullet list: “token(s) → Label”.
-    Span format in dataset: [start, end, label]
-    """
-    parts = []
-    for start, end, label in spans:
-        text = " ".join(tokens[start : end + 1])
-        parts.append(f"• {text} → {LABEL_MAP.get(label, label)}")
-    return "\n".join(parts) if parts else "• No entities detected"
-
-def transform(record, idx):
-    tokens = record["sentences"][0]
-    spans  = record["ner"][0]
-
-    prompt = random.choice(instruction_templates)
-    human  = {
-        "from": "human",
-        "value": f"{prompt}\n\n{' '.join(tokens)}"
-    }
-
-    gpt_tool_call = {
-        "from": "gpt",
-        "thoughts": "To extract the medical entities, I'll call the RaTE-NER tool.",
-        "actions": [{
-            "API_name": "RaTE-NER",
-            "API_params": {"tokens": tokens}
-        }],
-        "value": "Calling RaTE-NER to extract entities..."
-    }
-
-    pretty_entities = spans_to_entities(tokens, spans)
-    friendly_reply  = random.choice(answer_templates).format(entities=pretty_entities)
+def generate_image_id():
+    """Generate a medical image ID for format compatibility
     
-    gpt_final_response = {
-        "from": "gpt",
-        "value": friendly_reply
-    }
+    Even though we're using dummy images, we maintain realistic ID format
+    to ensure compatibility with systems expecting medical image identifiers
+    """
+    segments = []
+    for _ in range(5):
+        segment = format(random.randint(0, 0xffffffff), '08x')
+        segments.append(segment)
+    return '-'.join(segments)
 
+def create_image_filename(image_id):
+    """Create dummy image filename and full path
+    
+    Uses a single dummy image for all entries since this is a text-based NER task.
+    The image_id is still unique for each record to maintain proper format structure.
+    """
+    full_path = f"{IMAGE_BASE_PATH}/{DUMMY_IMAGE_NAME}"
+    return DUMMY_IMAGE_NAME, full_path
+
+def reconstruct_sentence(tokens):
+    """Reconstruct sentence from token list
+    
+    Takes a list of tokens and joins them into a readable sentence.
+    This handles the tokenized format of your NER dataset.
+    """
+    return " ".join(tokens)
+
+def format_entities(tokens, entity_annotations):
+    """Format entity annotations for display
+    
+    Converts the span-based entity annotations into human-readable format
+    showing which tokens correspond to which entity types.
+    """
+    if not entity_annotations or not entity_annotations[0]:
+        return "No entities found."
+    
+    entity_list = []
+    for start, end, entity_type in entity_annotations[0]:  # First sentence annotations
+        # Extract the entity tokens using the span indices
+        entity_tokens = tokens[start:end+1]
+        entity_text = " ".join(entity_tokens)
+        entity_list.append(f"'{entity_text}' -> {entity_type}")
+    
+    return "\n".join(entity_list)
+
+def transform(ex, idx):
+    """Transform a NER example into the new image-based format while preserving NER functionality"""
+    
+    note_id = ex["note_id"]
+    sentences = ex["sentences"]
+    ner_annotations = ex["ner"]
+
+    sentence_tokens = sentences[0] if sentences else []
+    sentence_text = reconstruct_sentence(sentence_tokens)
+
+    image_id = generate_image_id()
+    image_filename, full_path = create_image_filename(image_id)
+    
+    system_prompt = random.choice(prompt_templates)
+    
+    user_prompt = (
+        system_prompt +
+        f"\n\n### Text to analyze:\n{sentence_text}"
+    )
+    
+    formatted_entities = format_entities(sentence_tokens, ner_annotations)
+    
+    ner_output = f"RaTE-NER output: {formatted_entities}\n\nAnswer my first request: {system_prompt.replace('<image>', '').strip()}\n\n"
+
+    friendly_reply = random.choice(answer_templates).format(entities=formatted_entities)
+    
     return {
-        "id": f"ner_sample_{idx}",
-        "conversations": [human, gpt_tool_call, gpt_final_response]
+        "image_id": image_id,
+        "image": image_filename,
+        "file_name": full_path,
+        "conversations": [
+            {
+                "from": "human",
+                "value": user_prompt
+            },
+            {
+                "from": "gpt",
+                "thoughts": "To perform named entity recognition on this text, I'll call the RaTE-NER model.",
+                "actions": [
+                    {
+                        "API_name": "RaTE-NER",
+                        "API_params": {"text": sentence_text}
+                    }
+                ],
+                "value": "Calling RaTE-NER tool to identify and classify medical entities..."
+            },
+            {
+                "from": "human",
+                "value": ner_output
+            },
+            {
+                "from": "gpt",
+                "thoughts": "The RaTE-NER has completed the entity recognition. Now I can provide the formatted results.",
+                "actions": [],
+                "value": friendly_reply
+            }
+        ]
     }
 
-def build_dataset(input_path, output_path, max_samples=MAX_SAMPLES):
-    with open(input_path, "r", encoding="utf-8") as fin, \
-         open(output_path, "w", encoding="utf-8") as fout:
-
-        for idx, line in enumerate(tqdm(fin, desc="Building NER instruction data")):
-            if idx >= max_samples:
-                break
-            record = json.loads(line)
-            conv = transform(record, idx)
-            fout.write(json.dumps(conv, ensure_ascii=False) + "\n")
-
-    print(f"Wrote {min(idx + 1, max_samples)} examples to '{output_path}'")
+def build_instruction_dataset(input_path, output_path, max_samples):
+    """Build the medical NER dataset in the new image-based format"""
+    
+    examples = []
+    with open(input_path, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f):
+            line = line.strip()
+            if line:
+                try:
+                    examples.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    print(f"Warning: Skipping malformed JSON on line {line_num + 1}: {e}")
+                    continue
+    
+    print(f"Loaded {len(examples)} examples from {input_path}")
+    
+    subset = examples[:max_samples]
+    
+    with open(output_path, "w", encoding="utf-8") as out:
+        for idx, ex in enumerate(tqdm(subset, desc=f"Transforming first {max_samples} NER examples")):
+            record = transform(ex, idx)
+            out.write(json.dumps(record, ensure_ascii=False) + "\n")
+    
+    print(f"\nWrote {len(subset)} NER records to '{output_path}'")
+    print(f"All records use dummy image: {DUMMY_IMAGE_NAME}")
 
 if __name__ == "__main__":
-    build_dataset(INPUT_FILE, OUTPUT_FILE)
+    build_instruction_dataset(INPUT_FILE, OUTPUT_FILE, MAX_SAMPLES)
