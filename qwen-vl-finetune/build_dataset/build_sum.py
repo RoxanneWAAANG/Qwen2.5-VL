@@ -6,67 +6,69 @@ from tqdm import tqdm
 
 INPUT_DIR   = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/sumpubmed/line_text")
 SUMMARY_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/sumpubmed/abstract")
+IMAGE_BASE_PATH = "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images"
+DUMMY_IMAGE_NAME = "dummy_img.png"
 OUTPUT_FILE = Path("./tool_instruct/llava_sum_dataset.jsonl")
 
 summarization_instructions = [
-    "Summarize the key findings of this medical passage.",
-    "Generate a concise overview of the medical abstract.",
-    "Create a short summary highlighting the main points.",
-    "What is the core message in the clinical note below?",
-    "Give a brief textual summary of the input content.",
-    "Write a summary that captures the essential medical details.",
-    "Condense the following clinical passage into a short summary.",
-    "What are the main diagnoses or treatments mentioned here?",
-    "Briefly summarize the patient case described below.",
-    "Provide a one-paragraph summary of the following abstract.",
-    "Summarize this clinical report for a busy practitioner.",
-    "Generate a synopsis highlighting key symptoms and interventions.",
-    "Write a summary suitable for a medical case database.",
-    "Create a plain-language summary of this clinical abstract.",
-    "Offer a summary of the most critical clinical findings.",
-    "Extract and summarize the diagnostic conclusions from this report.",
-    "Provide a brief summary emphasizing patient outcomes.",
-    "Outline the prominent clinical observations in a short summary.",
-    "Reduce the text to a concise summary of major medical insights.",
-    "Summarize the methodology and results presented in this excerpt.",
-    "Highlight the key clinical recommendations in summary form.",
-    "Create a digest of the most important research findings.",
-    "Provide an overview suitable for medical record notes.",
-    "Write a brief abstract based on the given clinical paragraph.",
-    "Generate a short summary focusing on diagnostic criteria.",
-    "Summarize the main pharmacological interventions described.",
-    "Offer a quick summary for clinician reference.",
-    "Provide a concise recap of the clinical trial results.",
-    "Create a summary that outlines patient demographics and outcomes.",
-    "Summarize this text for inclusion in a discharge summary.",
-    "Write a brief summary capturing essential laboratory findings.",
-    "Generate a concise overview of symptoms and treatment plans.",
-    "Summarize the clinical significance of the findings below.",
-    "Offer a one-sentence summary of the passage's main conclusion.",
-    "Craft a high-level overview of this patient's journey and outcomes.",
-    "Produce a brief summary emphasizing the study's purpose and conclusion.",
-    "Capture the main imaging findings in a few sentences.",
-    "Summarize the patient's history, exam, and plan in a concise paragraph.",
-    "Generate a layperson-friendly summary of this medical text.",
-    "Provide a clinical take-home points summary.",
-    "Distill this medical abstract into few key sentences.",
-    "Summarize the treatment plan and follow-up instructions.",
-    "Create a summary that highlights safety and efficacy results.",
-    "Produce an executive summary of this clinical trial report.",
-    "Write a short summary of the patient's vital signs and labs.",
-    "Generate a focused summary on the diagnostic imaging findings.",
-    "Summarize the procedural steps and outcomes outlined below.",
-    "Provide an abbreviated summary of this medical case.",
-    "Create a concise summary for rapid clinical decision-making.",
-    "Summarize the adverse events and management strategies.",
-    "Write a brief summary of the study design and endpoints.",
-    "Produce a summary emphasizing changes from baseline values.",
-    "Summarize the follow-up recommendations.",
-    "Capture the essential diagnostic criteria in a short summary.",
-    "Generate a summary that outlines risk factors and prevention.",
-    "Summarize the pathophysiology and key clinical markers.",
-    "Provide a summary focusing on patient symptoms and response.",
-    "Write a summary of the research hypothesis and results."
+    "<image>\nSummarize the key findings of this medical passage.",
+    "<image>\nGenerate a concise overview of the medical abstract.",
+    "<image>\nCreate a short summary highlighting the main points.",
+    "<image>\nWhat is the core message in the clinical note below?",
+    "<image>\nGive a brief textual summary of the input content.",
+    "<image>\nWrite a summary that captures the essential medical details.",
+    "<image>\nCondense the following clinical passage into a short summary.",
+    "<image>\nWhat are the main diagnoses or treatments mentioned here?",
+    "<image>\nBriefly summarize the patient case described below.",
+    "<image>\nProvide a one-paragraph summary of the following abstract.",
+    "<image>\nSummarize this clinical report for a busy practitioner.",
+    "<image>\nGenerate a synopsis highlighting key symptoms and interventions.",
+    "<image>\nWrite a summary suitable for a medical case database.",
+    "<image>\nCreate a plain-language summary of this clinical abstract.",
+    "<image>\nOffer a summary of the most critical clinical findings.",
+    "<image>\nExtract and summarize the diagnostic conclusions from this report.",
+    "<image>\nProvide a brief summary emphasizing patient outcomes.",
+    "<image>\nOutline the prominent clinical observations in a short summary.",
+    "<image>\nReduce the text to a concise summary of major medical insights.",
+    "<image>\nSummarize the methodology and results presented in this excerpt.",
+    "<image>\nHighlight the key clinical recommendations in summary form.",
+    "<image>\nCreate a digest of the most important research findings.",
+    "<image>\nProvide an overview suitable for medical record notes.",
+    "<image>\nWrite a brief abstract based on the given clinical paragraph.",
+    "<image>\nGenerate a short summary focusing on diagnostic criteria.",
+    "<image>\nSummarize the main pharmacological interventions described.",
+    "<image>\nOffer a quick summary for clinician reference.",
+    "<image>\nProvide a concise recap of the clinical trial results.",
+    "<image>\nCreate a summary that outlines patient demographics and outcomes.",
+    "<image>\nSummarize this text for inclusion in a discharge summary.",
+    "<image>\nWrite a brief summary capturing essential laboratory findings.",
+    "<image>\nGenerate a concise overview of symptoms and treatment plans.",
+    "<image>\nSummarize the clinical significance of the findings below.",
+    "<image>\nOffer a one-sentence summary of the passage's main conclusion.",
+    "<image>\nCraft a high-level overview of this patient's journey and outcomes.",
+    "<image>\nProduce a brief summary emphasizing the study's purpose and conclusion.",
+    "<image>\nCapture the main imaging findings in a few sentences.",
+    "<image>\nSummarize the patient's history, exam, and plan in a concise paragraph.",
+    "<image>\nGenerate a layperson-friendly summary of this medical text.",
+    "<image>\nProvide a clinical take-home points summary.",
+    "<image>\nDistill this medical abstract into few key sentences.",
+    "<image>\nSummarize the treatment plan and follow-up instructions.",
+    "<image>\nCreate a summary that highlights safety and efficacy results.",
+    "<image>\nProduce an executive summary of this clinical trial report.",
+    "<image>\nWrite a short summary of the patient's vital signs and labs.",
+    "<image>\nGenerate a focused summary on the diagnostic imaging findings.",
+    "<image>\nSummarize the procedural steps and outcomes outlined below.",
+    "<image>\nProvide an abbreviated summary of this medical case.",
+    "<image>\nCreate a concise summary for rapid clinical decision-making.",
+    "<image>\nSummarize the adverse events and management strategies.",
+    "<image>\nWrite a brief summary of the study design and endpoints.",
+    "<image>\nProduce a summary emphasizing changes from baseline values.",
+    "<image>\nSummarize the follow-up recommendations.",
+    "<image>\nCapture the essential diagnostic criteria in a short summary.",
+    "<image>\nGenerate a summary that outlines risk factors and prevention.",
+    "<image>\nSummarize the pathophysiology and key clinical markers.",
+    "<image>\nProvide a summary focusing on patient symptoms and response.",
+    "<image>\nWrite a summary of the research hypothesis and results."
 ]
 
 answer_templates = [
@@ -112,69 +114,130 @@ answer_templates = [
     "Concise summary output:\n{summary}",
 ]
 
+def generate_image_id():
+    """Generate a medical image ID for format compatibility
+    
+    Even though we're using dummy images, we maintain realistic ID format
+    to ensure compatibility with systems expecting medical image identifiers
+    """
+    segments = []
+    for _ in range(5):
+        segment = format(random.randint(0, 0xffffffff), '08x')
+        segments.append(segment)
+    return '-'.join(segments)
+
+def create_image_filename(image_id):
+    """Create dummy image filename and full path
+    
+    Uses a single dummy image for all entries since this is a text-based summarization task.
+    The image_id is still unique for each record to maintain proper format structure.
+    """
+    full_path = f"{IMAGE_BASE_PATH}/{DUMMY_IMAGE_NAME}"
+    return DUMMY_IMAGE_NAME, full_path
+
 def load_pairs(max_samples: int) -> list[tuple[str, str, str]]:
+    """Load text-summary pairs from the input directories
+    
+    This function maintains the original pairing logic while preparing data
+    for the new multimodal format transformation.
+    """
     summaries = {}
     for f in SUMMARY_DIR.iterdir():
-        if f.suffix != ".txt": continue
+        if f.suffix != ".txt": 
+            continue
         key = f.stem.split("_")[-1]
         summaries[key] = f.read_text(encoding="utf-8").strip()
 
     pairs = []
     for f in sorted(INPUT_DIR.iterdir()):
-        if f.suffix != ".txt": continue
+        if f.suffix != ".txt": 
+            continue
         key = f.stem.split("_")[-1]
-        if key not in summaries: continue
+        if key not in summaries: 
+            continue
+        
         paragraph = f.read_text(encoding="utf-8").strip()
         if paragraph:
             pairs.append((key, paragraph, summaries[key]))
+        
         if len(pairs) >= max_samples:
-            break
+            break 
+    
     return pairs
 
 def transform(idx: int, key: str, text: str, summary: str) -> dict:
-    """Create a single conversation record."""
+    """Transform a text-summary pair into the new multimodal format
+    
+    This function converts the original summarization data into the four-turn
+    conversation pattern while preserving the LLaVA tool integration and 
+    medical summarization task structure.
+    """
+    image_id = generate_image_id()
+    image_filename, full_path = create_image_filename(image_id)
+    
     instruction = random.choice(summarization_instructions)
-    user_prompt = f"{instruction}\n\n{text}"
-
-    tool_call = {
-        "from": "gpt",
-        "thoughts": "Using LLaVA to summarize the medical passage.",
-        "actions": [
-            {
-                "API_name": "LLaVA",
-                "API_params": {"task": "summarization", "text": text}
-            }
-        ],
-        "value": "Generating medical summary with LLaVA..."
-    }
-
+    user_prompt = f"{instruction}\n\n### Text to summarize:\n{text}"
+    
+    llava_output = f"LLaVA output: {summary}\n\nAnswer my first request: {instruction.replace('<image>', '').strip()}\n\n"
+    
     final_reply = random.choice(answer_templates).format(summary=summary)
-    assistant_reply = {"from": "gpt", "value": final_reply}
-
+    
     return {
-        "id": f"summ_{key}_{idx}",
+        "image_id": image_id,
+        "image": image_filename,
+        "file_name": full_path,
         "conversations": [
-            {"from": "human", "value": user_prompt},
-            tool_call,
-            assistant_reply
+            {
+                "from": "human",
+                "value": user_prompt
+            },
+            {
+                "from": "gpt",
+                "thoughts": "To generate a medical summary of this text, I'll use the LLaVA model.",
+                "actions": [
+                    {
+                        "API_name": "LLaVA",
+                        "API_params": {"task": "summarization", "text": text}
+                    }
+                ],
+                "value": "Calling LLaVA to generate a medical summary..."
+            },
+            {
+                "from": "human",
+                "value": llava_output
+            },
+            {
+                "from": "gpt",
+                "thoughts": "The LLaVA tool has completed the summarization. Now I can provide the formatted summary.",
+                "actions": [],
+                "value": final_reply
+            }
         ]
     }
 
 def build_dataset(n_samples: int = 5000,
                   seed: int = 42,
                   output_path: Path = OUTPUT_FILE) -> None:
+    """Build the medical summarization dataset in the new multimodal format
+    
+    This function orchestrates the entire transformation process while maintaining
+    the original data loading and processing logic adapted for multimodal compatibility.
+    """
     random.seed(seed)
+    
     pairs = load_pairs(n_samples)
-    print(f"Loaded {len(pairs)} paragraph-summary pairs.")
-
+    print(f"Loaded {len(pairs)} paragraph-summary pairs for transformation.")
+    
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    
     with output_path.open("w", encoding="utf-8") as fout:
-        for idx, (key, para, summ) in enumerate(tqdm(pairs, desc="Building summaries")):
-            json.dump(transform(idx, key, para, summ),
-                      fout, ensure_ascii=False)
+        for idx, (key, para, summ) in enumerate(tqdm(pairs, desc="Building multimodal summarization dataset")):
+            record = transform(idx, key, para, summ)
+            json.dump(record, fout, ensure_ascii=False)
             fout.write("\n")
-
-    print(f"Saved {len(pairs)} summarization samples to '{output_path}'")
+    
+    print(f"\nSaved {len(pairs)} summarization samples to '{output_path}'")
+    print(f"All records use dummy image: {DUMMY_IMAGE_NAME}")
 
 if __name__ == "__main__":
     build_dataset()
