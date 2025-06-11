@@ -47,6 +47,11 @@ def load_model_and_processor(ckpt_dir: str, processor_dir: str):
     # Load (possibly incomplete) processor configs
     processor = AutoProcessor.from_pretrained(processor_dir)
 
+    # Set padding side to left for decoder-only models
+    if hasattr(processor, 'tokenizer'):
+        processor.tokenizer.padding_side = 'left'
+        print("Set tokenizer padding_side to 'left' for decoder-only model")
+
     # Ensure chat_template is set (needed for apply_chat_template)
     if not hasattr(processor, 'chat_template') or processor.chat_template is None:
         print("Loading chat_template from base model...")
