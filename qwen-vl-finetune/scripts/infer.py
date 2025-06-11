@@ -4,17 +4,18 @@ Inference script for Qwen2.5-VL with separate checkpoint and processor directori
 including fallback for missing chat_template by loading it from the base model.
 
 Usage:
-    python qwen-vl-finetune/infer_qwen2_5_vl.py \
-      --ckpt_dir ./qwen-vl-finetune/output/checkpoint-78 \
+    python3 ./scripts/infer.py \
+      --ckpt_dir /home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/output_7b/checkpoint-121 \
       --processor_dir ./qwen-vl-finetune/output \
       --image_path path/to/image.jpg \
       --prompt "Describe this image."
 
 Prerequisites:
-    pip install transformers==4.51.3 accelerate qwen-vl-utils[decord]
+    pip install transformers==4.49.0 accelerate qwen-vl-utils[decord]
     # Optional for FlashAttention2 (faster, if you have compatible hardware):
     # pip install -U flash-attn --no-build-isolation
 """
+# export PYTHONPATH=$PYTHONPATH:/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-utils/src
 
 import argparse
 import torch
@@ -22,7 +23,7 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 # Base model identifier for chat_template fallback
-BASE_MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
+BASE_MODEL_NAME = "/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-3B-Instruct"
 
 
 def load_model_and_processor(ckpt_dir: str, processor_dir: str):
@@ -100,7 +101,7 @@ def run_inference(model, processor, messages):
 def main():
     parser = argparse.ArgumentParser(description="Qwen2.5-VL inference with fallback chat_template")
     parser.add_argument("--ckpt_dir", type=str, required=True,
-                        help="Path to the checkpoint directory containing model weights (e.g., output/checkpoint-78)")
+                        help="Path to the checkpoint directory containing model weights")
     parser.add_argument("--processor_dir", type=str, required=True,
                         help="Path to the processor config directory (e.g., output)")
     parser.add_argument("--image_path", type=str, required=True,
