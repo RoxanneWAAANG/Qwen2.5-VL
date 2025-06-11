@@ -144,7 +144,7 @@ def transform(record: dict, idx: int) -> dict:
     image_id_raw = record["image_path"][0]
     image_id = image_id_raw.strip("/").split("/")[-1].split(".")[0]
     image = image_id + ".jpg"
-    image_path = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k" + image_id + ".jpg"
+    image_path = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k/" + image_id + ".jpg"
     file_name = str(image_path)
 
     report_text = record["report"]
