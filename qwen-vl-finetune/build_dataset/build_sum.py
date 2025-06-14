@@ -9,6 +9,7 @@ SUMMARY_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/sump
 IMAGE_BASE_PATH = "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images"
 DUMMY_IMAGE_NAME = "dummy_img.png"
 OUTPUT_FILE = Path("./tool_instruct/llava_sum_dataset.jsonl")
+MAX_INPUT_TOKENS = 8000
 
 summarization_instructions = [
     "<image>\nSummarize the key findings of this medical passage.",
@@ -114,6 +115,51 @@ answer_templates = [
     "Concise summary output:\n{summary}",
 ]
 
+def estimate_tokens(text: str) -> int:
+    """Estimate the number of tokens in the text
+    
+    Uses a simple heuristic: approximately 1 token per 3.5 characters for mixed content
+    This is a rough estimation suitable for token counting and truncation purposes
+    """
+    return len(text) // 3.5
+
+def truncate_text_by_tokens(text: str, max_tokens: int) -> str:
+    """Truncate text to stay within the maximum token limit
+    
+    Args:
+        text: Input text to potentially truncate
+        max_tokens: Maximum number of tokens allowed
+        
+    Returns:
+        Truncated text if needed, original text otherwise
+    """
+    estimated_tokens = estimate_tokens(text)
+    if estimated_tokens <= max_tokens:
+        return text
+    
+    # Calculate the approximate character limit based on token limit
+    char_limit = int(max_tokens * 3.5)
+    truncated = text[:char_limit]
+    
+    # Try to end at a sentence boundary if possible
+    last_period = truncated.rfind('.')
+    last_exclamation = truncated.rfind('!')
+    last_question = truncated.rfind('?')
+    
+    sentence_end = max(last_period, last_exclamation, last_question)
+    
+    # If we found a sentence ending within the last 20% of the truncated text, use it
+    if sentence_end > char_limit * 0.8:
+        return truncated[:sentence_end + 1]
+    
+    # Otherwise, try to end at a word boundary
+    last_space = truncated.rfind(' ')
+    if last_space > char_limit * 0.9:
+        return truncated[:last_space]
+    
+    # Fallback: just truncate at character limit
+    return truncated
+
 def generate_image_id():
     """Generate a medical image ID for format compatibility
     
@@ -139,7 +185,7 @@ def load_pairs(max_samples: int) -> list[tuple[str, str, str]]:
     """Load text-summary pairs from the input directories
     
     This function maintains the original pairing logic while preparing data
-    for the new multimodal format transformation.
+    for the new multimodal format transformation. Now includes token-based truncation.
     """
     summaries = {}
     for f in SUMMARY_DIR.iterdir():
@@ -149,6 +195,8 @@ def load_pairs(max_samples: int) -> list[tuple[str, str, str]]:
         summaries[key] = f.read_text(encoding="utf-8").strip()
 
     pairs = []
+    truncated_count = 0
+    
     for f in sorted(INPUT_DIR.iterdir()):
         if f.suffix != ".txt": 
             continue
@@ -158,10 +206,19 @@ def load_pairs(max_samples: int) -> list[tuple[str, str, str]]:
         
         paragraph = f.read_text(encoding="utf-8").strip()
         if paragraph:
+            # Check token count and truncate if necessary
+            original_tokens = estimate_tokens(paragraph)
+            if original_tokens > MAX_INPUT_TOKENS:
+                paragraph = truncate_text_by_tokens(paragraph, MAX_INPUT_TOKENS)
+                truncated_count += 1
+                
             pairs.append((key, paragraph, summaries[key]))
         
         if len(pairs) >= max_samples:
             break 
+    
+    if truncated_count > 0:
+        print(f"Truncated {truncated_count} texts that exceeded {MAX_INPUT_TOKENS} tokens")
     
     return pairs
 
