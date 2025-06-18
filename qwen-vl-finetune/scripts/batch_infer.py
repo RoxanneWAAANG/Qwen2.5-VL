@@ -3,7 +3,7 @@
 Batch inference script for Qwen2.5-VL with separate checkpoint and processor directories.
 
 python3 ./scripts/batch_infer.py \
-  --ckpt_dir /home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/output_7b/checkpoint-121 \
+  --ckpt_dir /home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/output_7b/checkpoint-160 \
   --processor_dir /home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/output_7b \
   --input_json ./scripts/batch_inputs.json \
   --batch_size 4 \
