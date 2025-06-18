@@ -4,10 +4,10 @@ Script to extract batch inference inputs from instruct datasets.
 Converts JSONL instruct format to batch inference JSON format.
 
 Usage:
-    python3 ./scripts/extract_batch_inputs.py \
-      --input_dir ./build_dataset/tool_instruct \
-      --output_file batch_inputs.json \
-      --samples_per_file 100
+python3 ./scripts/extract_batch_inputs.py \
+    --input_dir ./build_dataset/tool_instruct \
+    --output_file batch_inputs.json \
+    --samples_per_file 1000
 """
 
 import argparse
