@@ -46,6 +46,11 @@ ULTRASAM_SEGMENTATION = {
     "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/UltraSam/dataset/BrEaST/BrEaST-Lesions_USG-images_and_masks-Dec-15-2023/images",
 }
 
+UNIGRADICON_REG = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/unigradicon_reg_dataset.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
 
 data_dict = {
     "healthgpt_reconstruction": HEALTHGPT_RECONSTRUCTION,
@@ -57,6 +62,7 @@ data_dict = {
     "rate_ner": RATE_NER,
     "svlms_report_generation": SVLMS_REPORT_GENERATION,
     "ultrasam_segmentation": ULTRASAM_SEGMENTATION,
+    "unigradicon_reg": UNIGRADICON_REG,
 }
 
 
