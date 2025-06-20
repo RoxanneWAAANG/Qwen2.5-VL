@@ -167,16 +167,14 @@ answer_templates = [
     "The registration process finished successfully. Both images are now in the same coordinate system for accurate comparison.",
 ]
 
-def transform(idx: int, image_files: list) -> dict:
-    """Randomly sample two image paths from the list to act as fixed and moving."""
+def get_random_image_pair(image_files):
     return random.sample(image_files, 2)
 
-def transform(idx: int) -> dict:
+def transform(idx: int, image_files: list) -> dict:
     modality = random.choice(MODALITIES)
     
     # Get 2 random real images
-    image_paths = get_random_image_pair(image_files=IMAGE_DIR.glob("*.jpg"))
-    fixed_image, moving_image = image_paths
+    fixed_image, moving_image = get_random_image_pair(image_files)
     
     # Choose a prompt template
     chosen_template = random.choice(PROMPT_TEMPLATES)
