@@ -3,9 +3,9 @@ import random
 from pathlib import Path
 from tqdm import tqdm
 
-
+IMAGE_DIR = Path("/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k")
 OUTPUT_FILE = Path("./tool_instruct/unigradicon_reg_dataset.jsonl")
-NUM_SAMPLES = 5000
+
 MODALITIES  = ["CT", "MRI"]
 
 PROMPT_TEMPLATES = [
@@ -49,8 +49,6 @@ PROMPT_TEMPLATES = [
     "Align this for image fusion in {modality}.",
     "Run registration to assist with image interpretation for {modality}.",
     "Use registration to prepare the scans for downstream analysis in {modality}.",
-    
-    # Generic prompts without modality specification
     "Can you align the moving image to the fixed image?",
     "Help me register these medical scans.",
     "Please perform registration between these two images.",
@@ -169,18 +167,16 @@ answer_templates = [
     "The registration process finished successfully. Both images are now in the same coordinate system for accurate comparison.",
 ]
 
-def generate_image_paths(modality: str) -> list:
-    """Generate placeholder image paths for fixed and moving images"""
-    return [
-        f"medical_images/{modality.lower()}/fixed_image.jpg",
-        f"medical_images/{modality.lower()}/moving_image.jpg"
-    ]
+def transform(idx: int, image_files: list) -> dict:
+    """Randomly sample two image paths from the list to act as fixed and moving."""
+    return random.sample(image_files, 2)
 
 def transform(idx: int) -> dict:
     modality = random.choice(MODALITIES)
     
-    # Generate image paths
-    image_paths = generate_image_paths(modality)
+    # Get 2 random real images
+    image_paths = get_random_image_pair(image_files=IMAGE_DIR.glob("*.jpg"))
+    fixed_image, moving_image = image_paths
     
     # Choose a prompt template
     chosen_template = random.choice(PROMPT_TEMPLATES)
@@ -193,7 +189,10 @@ def transform(idx: int) -> dict:
         # If no {modality} placeholder, use template as is
         formatted_prompt = chosen_template
     
-    user_prompt = f"{formatted_prompt}"
+    user_prompt = {
+        "from": "human",
+        "value": f"<image>\n<image>\n{formatted_prompt}"
+    }
     
     # Generate tool call response
     tool_call_response = {
@@ -219,7 +218,13 @@ def transform(idx: int) -> dict:
         # If no {modality} placeholder, use template as is
         tool_output = chosen_tool_template
     
-    human_tool_response = f"{tool_output}\n\nAnswer my original question about the image registration."
+    human_tool_response = {
+        "from": "human",
+        "value": (
+            f"{tool_output}\n\n"
+            f"Answer my first request: {formatted_prompt}"
+        )
+    }
     
     # Generate final answer
     chosen_answer_template = random.choice(answer_templates)
@@ -230,27 +235,22 @@ def transform(idx: int) -> dict:
         # If no {modality} placeholder, use template as is
         final_answer = chosen_answer_template
     
+    assistant_reply = {
+        "from": "gpt",
+        "thoughts": "Based on the UniGradICON output, I can now provide a comprehensive answer about the registration results.",
+        "actions": [],
+        "value": final_answer
+    }
+    
     return {
-        "images": image_paths,
+        "image_id": f"sample_{idx}",
+        "images": [str(fixed_image), str(moving_image)],
+        "file_name": str(fixed_image),
         "conversations": [
-            {
-                "from": "human",
-                "value": '<image>\n<image>\n' + user_prompt
-            },
+            user_prompt,
             tool_call_response,
-            {
-                "from": "human",
-                "value": (
-                    f"UniGradICON output: {image_paths[0]}\n\n"
-                    f"Answer my first request: {user_prompt}\n\n"
-                )
-            },
-            {
-                "from": "gpt",
-                "thoughts": "Based on the UniGradICON output, I can now provide a comprehensive answer about the registration results.",
-                "actions": [],
-                "value": final_answer
-            }
+            human_tool_response,
+            assistant_reply
         ]
     }
 
@@ -258,12 +258,18 @@ def build_dataset(n_samples: int = 5000,
                   seed: int = 42,
                   output_path: Path = OUTPUT_FILE) -> None:
     random.seed(seed)
+    valid_extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+    image_files = [p for p in IMAGE_DIR.iterdir()
+                   if p.suffix.lower() in valid_extensions and p.is_file()]
+
+    if len(image_files) < 2:
+        raise ValueError("Not enough images to generate pairs.")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as fout:
-        for idx in tqdm(range(n_samples),
-                        desc="Generating UniGradICON instructions"):
-            record = transform(idx)
+        for idx in tqdm(range(n_samples), desc="Generating UniGradICON dataset"):
+            record = transform(idx, image_files)
             json.dump(record, fout, ensure_ascii=False)
             fout.write("\n")
 
