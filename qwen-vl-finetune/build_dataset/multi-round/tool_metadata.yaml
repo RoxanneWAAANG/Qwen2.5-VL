@@ -1,0 +1,104 @@
+PMC-LLaMA:
+  modality: "Text"
+  task: "answer the question and provide a rationale"
+  refine_task: "expand or clarify the rationale"
+  default_args: {}
+  success_responses:
+    - "Here's the answer with initial reasoning."
+  refine_responses:
+    - "Here's a more detailed rationale."
+
+RaTE-NER:
+  modality: "Text"
+  task: "recognize named entities"
+  refine_task: "label entity types and correct any misses"
+  default_args: {}
+  success_responses:
+    - "Entities have been identified."
+  refine_responses:
+    - "Entities and their types are now labeled."
+
+LLaVA:
+  modality: "Text"
+  task: "summarize the text"
+  refine_task: "shorten and focus the summary"
+  default_args: {}
+  success_responses:
+    - "Here's the summary."
+  refine_responses:
+    - "The summary has been made more concise."
+
+UltraSAM:
+  modality: "US"
+  task: "segment the region of interest"
+  refine_task: "trim the mask to high-confidence voxels"
+  default_args:
+    confidence_threshold: 0.5
+  success_responses:
+    - "Here's the segmented region."  
+  refine_responses:
+    - "Mask has been refined by threshold."
+
+IterNet:
+  modality: "Retina"
+  task: "segment the blood vessels"
+  refine_task: "exclude vessels smaller than 2 pixels"
+  default_args:
+    min_size: 2
+  success_responses:
+    - "Vessel segmentation complete."
+  refine_responses:
+    - "Small vessels have been removed."
+
+uniGradICON:
+  modality: "CT, MRI"
+  task: "register the moving image to the fixed image"
+  refine_task: "refine alignment with a smaller tolerance"
+  default_args:
+    tolerance: 1.0
+  success_responses:
+    - "Registration successful."
+  refine_responses:
+    - "Alignment has been refined."
+
+HealthGPT:
+  modality: "X-ray, MRI, CT, US"
+  task: "reconstruct the image"
+  refine_task: "enhance contrast on the reconstruction"
+  default_args:
+    task: "reconstruct_image"
+  success_responses:
+    - "Reconstruction is ready."
+  refine_responses:
+    - "Contrast enhancement applied."
+
+SuperRes:
+  modality: "X-ray, MRI, CT, US"
+  task: "super-resolve the image"
+  refine_task: "increase upscaling factor to 4x"
+  default_args:
+    scale: 2
+  success_responses:
+    - "Super-resolution complete."
+  refine_responses:
+    - "Upscaling factor increased."
+
+LLaVA-Rad:
+  modality: "X-ray, MRI, CT, US"
+  task: "generate a radiology report"
+  refine_task: "add more clinical findings"
+  default_args: {}
+  success_responses:
+    - "Radiology report generated."
+  refine_responses:
+    - "Added additional clinical details."
+
+SpecialistVLMs:
+  modality: "Retina (OCT)"
+  task: "generate a retina OCT report"
+  refine_task: "include detailed layer segmentation analysis"
+  default_args: {}
+  success_responses:
+    - "OCT report is ready."
+  refine_responses:
+    - "Layer segmentation details included."
