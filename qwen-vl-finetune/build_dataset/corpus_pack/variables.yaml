@@ -1,0 +1,45 @@
+area:
+- upper lobe
+- lower lobe
+- hilar region
+- costophrenic angle
+- mediastinum
+- apical region
+- basal segments
+- diaphragm
+- lung periphery
+- cardiac silhouette
+aspect:
+- contrast
+- sharpness
+- texture
+- signal quality
+- edge clarity
+zone:
+- anterior
+- posterior
+- lateral
+- medial
+- superior
+- inferior
+outcome:
+- diagnostic accuracy
+- visual clarity
+- sensitivity
+- specificity
+- precision
+feature:
+- edge definition
+- signal intensity
+- density variation
+- morphological details
+structure:
+- vascular network
+- bronchial tree
+- skeletal framework
+- soft tissue envelope
+finding:
+- ground-glass opacity
+- spiculated mass
+- pleural effusion
+- consolidation

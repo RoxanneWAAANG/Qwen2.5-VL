@@ -1,0 +1,64 @@
+starters:
+- 'Hi! '
+- 'Hello! '
+- 'Hey there! '
+- 'Good morning! '
+- 'Good afternoon! '
+- 'Greetings! '
+- 'Howdy! '
+- 'Salutations! '
+- 'Welcome! '
+- 'Good day! '
+transitions:
+- 'Excellent work! '
+- 'Great! '
+- 'Wonderful! '
+- 'Fantastic! '
+- 'Outstanding! '
+- 'Brilliant! '
+- 'Superb! '
+- 'Impressive! '
+- 'Remarkable! '
+- 'Terrific! '
+- 'Well done! '
+- 'Nice work! '
+- 'That''s helpful! '
+- 'That''s perfect! '
+- 'Spot on! '
+- 'That looks good, '
+- 'Interesting, '
+- 'Given these results, '
+- 'Considering these findings, '
+- 'Building on that, '
+- 'Additionally, '
+user_smalltalk:
+- By the way, how's your day going?
+- How are you today?
+- Hope you're doing well.
+- "Just checking\u2014everything running smoothly?"
+- 'Quick question: do you need any more info from me?'
+- Is the system load manageable on your end?
+- Let me know if you need another image.
+- Appreciate your help today.
+agent_smalltalk:
+- I'm doing well, thank you.
+- All systems operational.
+- Running smoothly on my end.
+- Happy to assist whenever you're ready.
+- "Everything looks good\u2014ready for the next step."
+- No issues detected; proceeding as planned.
+- "Thanks for asking\u2014I'm ready."
+completions:
+- The {task} analysis has been completed successfully.
+- I've finished the {task} as requested.
+- Your {task} procedure is now complete.
+- The {task} has been processed successfully.
+- I've completed the {task} evaluation.
+- The {task} assessment is finished.
+- Your {task} request has been fulfilled.
+- I've processed your {task} request.
+- The {task} results are now ready.
+- The enhanced {task} analysis is complete.
+probabilities:
+  prefix_chat: 0.2
+  closing_chat: 0.3
