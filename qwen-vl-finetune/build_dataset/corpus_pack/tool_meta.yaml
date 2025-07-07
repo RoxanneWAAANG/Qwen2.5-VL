@@ -1,70 +1,8 @@
-SegmentationTool:
-  modality: chest CT slice
-  refine_task: refine the segmentation
-  default_args:
-    model_name: unet_v2
-    threshold: 0.5
-  refine_responses:
-  - Segmentation refined; boundaries are now more precise.
-  - Refinement applied as instructed.
-  - "Output has been fine-tuned."
-  - Adjustments complete for higher accuracy.
-  - Details enhanced according to request.
-  - Revision done; let me know if you need another pass.
-  - "Tweaks finished -- please verify."
-  - "Fine-tuning successful, outcomes improved."
-  success_responses:
-  - Requested operation completed.
-  - Task executed successfully.
-  - Process finished without errors.
-  - Operation done. Review at your leisure.
-  - Task completed as specified.
-DetectionTool:
-  modality: CXR image
-  refine_task: fine-tune the detection
-  default_args:
-    model_name: yolov8n-mammo
-  refine_responses:
-  - Detection sensitivity boosted as requested.
-  - Refinement applied as instructed.
-  - "Output has been fine-tuned."
-  - Adjustments complete for higher accuracy.
-  - Details enhanced according to request.
-  - Revision done; let me know if you need another pass.
-  - "Tweaks finished--please verify."
-  - "Fine-tuning successful, outcomes improved."
-  success_responses:
-  - Requested operation completed.
-  - Task executed successfully.
-  - Process finished without errors.
-  - Operation done. Review at your leisure.
-  - Task completed as specified.
-ClassificationTool:
-  modality: histopathology patch
-  refine_task: re-classify the sample
-  default_args:
-    model_name: vit_large
-    tta: true
-  refine_responses:
-  - "Re-classification complete confidence increased."
-  - Refinement applied as instructed.
-  - "Output has been fine-tuned."
-  - Adjustments complete for higher accuracy.
-  - Details enhanced according to request.
-  - Revision done; let me know if you need another pass.
-  - "Tweaks finished, please verify."
-  - "Fine-tuning successful, outcomes improved."
-  success_responses:
-  - Requested operation completed.
-  - Task executed successfully.
-  - Process finished without errors.
-  - Operation done. Review at your leisure.
-  - Task completed as specified.
 HealthGPT:
   modality: medical image
-  refine_task: enhance the medical analysis
+  refine_task: image reconstruction, super resolution
   default_args:
-    task: analyze_image
+    task: image reconstruction, super resolution
   refine_responses:
   - Enhanced medical analysis completed successfully.
   - Refinement applied as instructed.
@@ -82,7 +20,7 @@ HealthGPT:
   - Task completed as specified.
 IterNet:
   modality: medical scan
-  refine_task: iteratively refine the analysis
+  refine_task: fundus image segmentation
   default_args:
     iterations: 3
   refine_responses:
@@ -102,7 +40,7 @@ IterNet:
   - Task completed as specified.
 LLaVA:
   modality: vision-language image
-  refine_task: refine the visual understanding
+  refine_task: text summarization
   default_args:
     task: analyze_image
   refine_responses:
@@ -122,7 +60,7 @@ LLaVA:
   - Task completed as specified.
 LLaVA-Rad:
   modality: radiological image
-  refine_task: refine the radiological interpretation
+  refine_task: refine the radiological report generation
   default_args:
     task: analyze_radiology
   refine_responses:
@@ -142,7 +80,7 @@ LLaVA-Rad:
   - Task completed as specified.
 PMC-LLaMA:
   modality: medical text
-  refine_task: refine the medical text analysis
+  refine_task: question answering, rational generation
   default_args:
     query: medical_analysis
   refine_responses:
@@ -181,8 +119,8 @@ RaTE-NER:
   - Medical entity extraction done. Review at your leisure.
   - Task completed as specified.
 SpecialistVLMs:
-  modality: specialized medical image
-  refine_task: refine the specialist analysis
+  modality: OCT report generaton
+  refine_task: refine the OCT analysis
   default_args:
     specialist_type: medical
   refine_responses:
