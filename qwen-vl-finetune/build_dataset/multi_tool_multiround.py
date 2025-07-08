@@ -1,16 +1,10 @@
 """
-multi_dialog_builder.py
+python3 multi_tool_multiround.py \
+--tool_yaml corpus_pack/tool_meta.yaml \
+--single_round_dir tool_instruct \
+--out multi_round/multi_tool_multiround.jsonl \
+--num 10
 
-Generate multi-round Qwen-style dialogue datasets from single-round examples and a tool-metadata YAML.
-
-Usage (CLI):
-  python3 multi_tool_multiround.py \
-    --tool_yaml corpus_pack/tool_meta.yaml \
-    --single_round_dir tool_instruct \
-    --out multi_round/multi_tool_multiround.jsonl \
-    --num 10000
-
-The script writes **one JSON-Lines object per conversation**, following the template you confirmed:
 {
   "session_id": …,
   "image_id": …,
@@ -18,14 +12,6 @@ The script writes **one JSON-Lines object per conversation**, following the temp
   "file_name": …,
   "conversations": [ {from, value, thoughts, actions, …}, … ]
 }
-
-New in this revision
---------------------
-* **Real data integration** from tool_instruct datasets
-* **Diversity strategy** with varied chain lengths and conversation styles
-* **Artifact tracking** for natural conversation flow
-* **Context-aware prompting** that references previous work
-* Supports all ten tools with real examples and outputs
 """
 from __future__ import annotations
 
@@ -35,8 +21,7 @@ import random
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union, Tuple
-import copy
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import yaml
 
@@ -132,6 +117,8 @@ class ConvState:
     session_id: str
     base_image_id: Optional[str] = None
     base_image_path: Optional[str] = None
+    all_image_paths: List[str] = field(default_factory=list)  # NEW: track all image paths
+    has_second_image: bool = False  # NEW: track if we have a second image for registration
     artifacts: Dict[str, Artifact] = field(default_factory=dict)
     conversation_context: List[str] = field(default_factory=list)
     tool_history: List[str] = field(default_factory=list)
@@ -288,6 +275,13 @@ class DiversityPlanner:
         self.registry = registry
         self.bank = bank
         
+        # NEW: scenarios for image introduction
+        self.image_scenarios = {
+            "same_image": 0.6,      # Continue with same image(s)
+            "add_for_registration": 0.2,  # Add second image for registration
+            "new_image": 0.2        # Introduce completely new image
+        }
+        
         # Chain templates by length
         self.chain_templates = {
             "short": [
@@ -375,6 +369,7 @@ class ContextAwareBuilder:
             
         state.base_image_id = first_example.image_id
         state.base_image_path = first_example.image_path
+        state.all_image_paths.append(first_example.image_path)  # NEW: add to list
         
         # Build each conversation turn
         for i, tool_name in enumerate(planned_chain):
@@ -383,11 +378,14 @@ class ContextAwareBuilder:
                 conversations.extend(turn)
                 state.tool_history.append(tool_name)
         
+        # Prepare final output with proper image format
+        image_field = state.all_image_paths if len(state.all_image_paths) > 1 else state.base_image_path
+        
         return {
             "session_id": state.session_id,
             "image_id": state.base_image_id,
-            "image": state.base_image_path,
-            "file_name": state.base_image_path,
+            "image": image_field,  # List if multiple images, string if single
+            "file_name": state.base_image_path,  # Always the primary image
             "conversations": conversations
         }
     
@@ -398,7 +396,7 @@ class ContextAwareBuilder:
             return []
             
         # Adapt user prompt for context
-        user_prompt = self._adapt_user_prompt(example, state, turn_idx, chain)
+        user_prompt = self._adapt_user_prompt(example, state, turn_idx, chain, tool_name)
         
         # Create assistant tool call
         assistant_call = self._create_assistant_call(example, state)
@@ -419,16 +417,53 @@ class ContextAwareBuilder:
             final_response
         ]
     
-    def _adapt_user_prompt(self, example: ToolExample, state: ConvState, turn_idx: int, chain: List[str]) -> str:
+    def _adapt_user_prompt(self, example: ToolExample, state: ConvState, turn_idx: int, chain: List[str], tool_name: str) -> str:
         """Adapt user prompt for conversation context."""
         if turn_idx == 0:
-            # First turn - use base prompt with image
-            if state.base_image_path:
-                return f"<image>\n{example.input_prompt}"
+            # First turn - handle registration special case
+            if tool_name == "UniGradICON":
+                # Registration needs two images
+                second_image_path = f"{state.base_image_path}_ref"  # Simulate second image
+                state.all_image_paths.append(second_image_path)
+                state.has_second_image = True
+                return f"<image>\n<image>\n{example.input_prompt}"
             else:
-                return example.input_prompt
+                # Normal single image
+                if state.base_image_path:
+                    return f"<image>\n{example.input_prompt}"
+                else:
+                    return example.input_prompt
         else:
-            # Later turns - reference previous work
+            # Later turns - decide scenario
+            if tool_name == "UniGradICON" and not state.has_second_image:
+                # Registration in later turn - introduce second image
+                state.has_second_image = True
+                # Add second image path (simulate or use from example)
+                second_image_path = f"{state.base_image_path}_ref"  # Simulate second image
+                state.all_image_paths.append(second_image_path)
+                context_phrases = [
+                    f"Now I have a second image. <image>\n{example.input_prompt}",
+                    f"Here's an additional image for registration. <image>\n{example.input_prompt}",
+                    f"I want to register this new image <image> with the previous one. {example.input_prompt}"
+                ]
+                return random.choice(context_phrases)
+            elif turn_idx >= 2 and random.random() < 0.3:  # NEW: 30% chance to introduce new image after turn 2
+                # Introduce completely new image
+                new_image_path = example.image_path  # Use example's image as new image
+                if new_image_path not in state.all_image_paths:
+                    state.all_image_paths.append(new_image_path)
+                    context_phrases = [
+                        f"Now I have a different image to analyze. <image>\n{example.input_prompt}",
+                        f"Let me switch to this new image. <image>\n{example.input_prompt}",
+                        f"Here's another image I'd like you to examine. <image>\n{example.input_prompt}",
+                        f"I want to analyze this different image now. <image>\n{example.input_prompt}"
+                    ]
+                    return random.choice(context_phrases)
+                else:
+                    # Fall back to normal context if image already exists
+                    pass
+            
+            # Normal follow-up (same image continuation)
             context_phrases = [
                 f"Now, {example.input_prompt.lower()}",
                 f"Following up on the previous analysis, {example.input_prompt.lower()}",
