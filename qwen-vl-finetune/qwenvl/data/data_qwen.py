@@ -48,6 +48,35 @@ def read_jsonl(path):
     with open(path, "r") as f:
         return [json.loads(line) for line in f]
 
+def reorganize_source_for_tool_use(source: List[Dict]) -> List[Dict]:
+    """
+    Merge `thoughts` / `actions` / `value` into `value`,
+    exactly like LLaVA‑Plus.
+    """
+    new_source = []
+    for conv in source:
+        if conv["from"].lower() == "human":
+            new_source.append(conv)
+            continue
+
+        merged = ""
+        if "thoughts" in conv:
+            merged += "\"thoughts🤔\" " + conv["thoughts"] + "\n"
+        if "actions" in conv:
+            merged += "\"actions🚀\" " + json.dumps(conv["actions"]) + "\n"
+        if "value" in conv:
+            merged += "\"value👉\" " + conv["value"] + "\n"
+
+        conv.pop("thoughts", None)
+        conv.pop("actions", None)
+        conv["value"] = merged
+        new_source.append(conv)
+        print('\n-------------')
+        print(new_source)
+        print('-------------\n')
+
+    return new_source
+
 
 def preprocess_qwen_2_visual(
     sources,
@@ -55,6 +84,7 @@ def preprocess_qwen_2_visual(
     grid_thw_image: List = [],
     grid_thw_video: List = [],
 ) -> Dict:
+    sources = [reorganize_source_for_tool_use(src) for src in sources]
     roles = {"human": "user", "gpt": "assistant"}
     system_message = "You are a helpful assistant."
 
