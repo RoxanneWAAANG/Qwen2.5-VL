@@ -7,156 +7,183 @@ python3 single_tool_multiround.py \
 
 '''
 
-import argparse, json, random, uuid, glob, yaml
+import argparse
+import json
+import random
+import uuid
+import glob
+import yaml
 from typing import Dict, List, Any, Sequence
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Helper functions
 # ──────────────────────────────────────────────────────────────────────────────
 def load_jsonl(path: str) -> List[Dict[str, Any]]:
-    with open(path, 'r') as f:
-        return [json.loads(l) for l in f]
+    """Load JSONL file into list of dictionaries"""
+    with open(path, 'r', encoding='utf-8') as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 def dump_jsonl(data: Sequence[Dict[str, Any]], path: str) -> None:
+    """Save list of dictionaries to JSONL file"""
     with open(path, 'w', encoding='utf-8') as f:
         for row in data:
             f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
 def load_lines(path: str) -> List[str]:
-    with open(path, 'r') as f:
-        return [ln.strip() for ln in f if ln.strip()]
+    """Load text file into list of lines"""
+    with open(path, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f if line.strip()]
 
 def load_banks(path: str) -> Dict[str, Any]:
-    with open(path, 'r') as f:
+    """Load YAML phrase banks"""
+    with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Enforce alternating human <-> gpt message sequence
+# Conversation building
 # ──────────────────────────────────────────────────────────────────────────────
-def enforce_alternation(convo: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    new_convo = []
-    expected = 'human'
-    for msg in convo:
-        if msg.get('from') == expected:
-            new_convo.append(msg)
-            expected = 'gpt' if expected == 'human' else 'human'
-    # if the last message is from 'human' without a following 'gpt', drop it
-    if new_convo and new_convo[-1].get('from') == 'human':
-        new_convo.pop()
-    return new_convo
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Small-talk rounds
-# ──────────────────────────────────────────────────────────────────────────────
-def chat_round(user_greet: str, agent_reply: str) -> List[Dict[str, Any]]:
+def create_greeting_round(greetings: List[str], banks: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Create opening greeting round"""
+    # Use starters from banks if greetings file is empty, otherwise use greetings file
+    if not greetings:
+        greeting = random.choice(banks.get('starters', ['Hello! ']))
+    else:
+        greeting = random.choice(greetings)
+        
     return [
-        {'from': 'human', 'value': user_greet},
-        {'from': 'gpt',   'thoughts': '…', 'actions': [], 'value': agent_reply},
-        {'from': 'human', 'value': "I'm ready to proceed."},
-        {'from': 'gpt',   'thoughts': '…', 'actions': [], 'value': 'Sure -- what would you like me to do?'},
+        {
+            "from": "human", 
+            "value": greeting
+        },
+        {
+            "from": "gpt", 
+            "thoughts": "…", 
+            "actions": [], 
+            "value": random.choice(banks.get('agent_smalltalk', ['Hello! How can I help you today?']))
+        }
     ]
 
-def closing_round(user_small: str, agent_small: str) -> List[Dict[str, Any]]:
+def create_closing_round(banks: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Create closing round with random phrases"""
+    # Use dedicated closing phrases if available, otherwise fall back to smalltalk
+    user_closing_phrases = banks.get('user_closing', banks.get('user_smalltalk', ["That's all for now, thanks!"]))
+    agent_closing_phrases = banks.get('agent_closing', banks.get('agent_smalltalk', ["Glad I could help! Have a great day."]))
+    
     return [
-        {'from': 'human', 'value': user_small},
-        {'from': 'gpt',   'thoughts': '…', 'actions': [], 'value': agent_small},
-        {'from': 'human', 'value': "No, that's all -- thanks!"},
-        {'from': 'gpt',   'thoughts': '…', 'actions': [], 'value': 'Glad to help -- take care!'},
+        {
+            "from": "human", 
+            "value": random.choice(user_closing_phrases)
+        },
+        {
+            "from": "gpt", 
+            "thoughts": "…", 
+            "actions": [], 
+            "value": random.choice(agent_closing_phrases)
+        }
     ]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Insert random small-talk throughout original conversation
-# ──────────────────────────────────────────────────────────────────────────────
-def insert_small_talk(convo: List[Dict[str, Any]], banks: Dict[str, Any]) -> List[Dict[str, Any]]:
-    new_convo = []
-    if len(convo) <= 1:
-        return convo
-    num_insert = random.randint(0, 2)
-    positions = sorted(random.sample(range(1, len(convo)), num_insert))
-    idx = 0
-    for i, msg in enumerate(convo):
-        new_convo.append(msg)
-        if idx < len(positions) and i == positions[idx]:
-            new_convo += chat_round(
-                random.choice(banks['starters']),
-                random.choice(banks['agent_smalltalk'])
-            )
-            idx += 1
-    return new_convo
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Build session: using greetings.txt for prefix, banks for diversity, no refine
-# ──────────────────────────────────────────────────────────────────────────────
 def build_session(
     example: Dict[str, Any],
     greetings: List[str],
-    banks: Dict[str, Any],
-    probs: Dict[str, float]
+    banks: Dict[str, Any]
 ) -> Dict[str, Any]:
-    convo = example.get('conversations', [])
-    # prefix greeting from greetings.txt
-    if random.random() < probs.get('prefix_chat', 0.2):
-        convo = chat_round(
-            random.choice(greetings),
-            random.choice(banks['agent_smalltalk'])
-        ) + convo
-    # insert small-talk within
-    convo = insert_small_talk(convo, banks)
-    # optional closing small-talk
-    if random.random() < probs.get('closing_chat', 0.3):
-        convo += closing_round(
-            random.choice(banks['user_smalltalk']),
-            random.choice(banks['agent_smalltalk'])
-        )
-    # enforce human-gpt alternation
-    convo = enforce_alternation(convo)
-    return {
+    """
+    Build a complete session with:
+    1. Greeting round
+    2. Original conversation 
+    3. Closing round
+    """
+    # Get original conversation
+    original_convo = example.get('conversations', [])
+    
+    # Build the complete conversation
+    conversation = []
+    
+    # 1. Add greeting round
+    conversation.extend(create_greeting_round(greetings, banks))
+    
+    # 2. Add original conversation (single-round dialogue)
+    conversation.extend(original_convo)
+    
+    # 3. Add closing round
+    conversation.extend(create_closing_round(banks))
+    
+    # Create session object
+    session = {
         'session_id': str(uuid.uuid4()),
-        'image_id':   example.get('image_id'),
-        'image':      example.get('image'),
-        'file_name':  example.get('file_name'),
-        'conversations': convo
+        'conversations': conversation
     }
+    
+    # Preserve original metadata if present
+    if 'image_id' in example:
+        session['image_id'] = example['image_id']
+    if 'image' in example:
+        session['image'] = example['image']
+    if 'file_name' in example:
+        session['file_name'] = example['file_name']
+    
+    return session
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CLI
+# Main processing
 # ──────────────────────────────────────────────────────────────────────────────
-def cli():
-    ap = argparse.ArgumentParser(description='Multi-round dialogue generator (no refine)')
-    ap.add_argument(
-        '--input', nargs='+', required=True,
-        help='One or many *.jsonl files (e.g. tool_instruct/*.jsonl)'
-    )
-    ap.add_argument(
-        '--greetings', required=True,
-        help='Text file with greetings for prefix chat'
-    )
-    ap.add_argument(
-        '--banks', required=True,
-        help='YAML file with small-talk banks and probabilities'
-    )
-    ap.add_argument(
-        '--output', required=True,
-        help='Output JSONL path'
-    )
-    return ap.parse_args()
-
-
 def main():
-    args = cli()
+    parser = argparse.ArgumentParser(
+        description='Generate simplified multi-round dialogues'
+    )
+    parser.add_argument(
+        '--input', 
+        nargs='+', 
+        required=True,
+        help='Input JSONL file(s) with single-round conversations'
+    )
+    parser.add_argument(
+        '--greetings', 
+        required=True,
+        help='Text file containing greeting phrases'
+    )
+    parser.add_argument(
+        '--banks', 
+        required=True,
+        help='YAML file with phrase banks for agent responses'
+    )
+    parser.add_argument(
+        '--output', 
+        required=True,
+        help='Output JSONL file path'
+    )
+    
+    args = parser.parse_args()
+    
+    # Load all input files
+    print("Loading input files...")
     single_rounds = []
-    for pat in args.input:
-        for p in glob.glob(pat):
-            single_rounds.extend(load_jsonl(p))
+    for pattern in args.input:
+        for file_path in glob.glob(pattern):
+            print(f"  Loading: {file_path}")
+            single_rounds.extend(load_jsonl(file_path))
+    
+    print(f"Loaded {len(single_rounds)} single-round conversations")
+    
+    # Load greetings and phrase banks
+    print("Loading greetings and phrase banks...")
     greetings = load_lines(args.greetings)
     banks = load_banks(args.banks)
-    probs = banks.get('probabilities', {'prefix_chat': 0.2, 'closing_chat': 0.3})
-    sessions = [
-        build_session(ex, greetings, banks, probs)
-        for ex in single_rounds
-    ]
+    
+    print(f"Loaded {len(greetings)} greetings")
+    
+    # Generate multi-round sessions
+    print("Generating multi-round sessions...")
+    sessions = []
+    for example in single_rounds:
+        session = build_session(example, greetings, banks)
+        sessions.append(session)
+    
+    # Save output
+    print(f"Saving {len(sessions)} sessions to {args.output}")
     dump_jsonl(sessions, args.output)
-    print(f"Wrote {len(sessions)} multi-round sessions to {args.output}")
+    
+    print("Done!")
 
 if __name__ == '__main__':
     main()
