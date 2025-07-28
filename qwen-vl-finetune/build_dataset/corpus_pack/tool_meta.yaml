@@ -178,3 +178,88 @@ UniGradICON:
   - Process finished without errors.
   - Medical image alignment done. Review at your leisure.
   - Task completed as specified.
+conch:
+  modality: pathology image
+  refine_task: visual question answering, tissue classification
+  default_args:
+    task: analyze_tissue
+  refine_responses:
+  - Pathological tissue analysis refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Tissue classification enhanced with improved accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Tissue analysis refinement finished -- please verify."
+  - "Pathological assessment improved, tissue identification enhanced."
+  success_responses:
+  - Pathological tissue analysis completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Tissue classification done. Review at your leisure.
+  - Task completed as specified.
+
+dsmil:
+  modality: pathology image
+  refine_task: tumor detection
+  default_args:
+    task: detect_tumor
+  refine_responses:
+  - Tumor detection refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Tumor detection enhanced with improved sensitivity.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Tumor detection refinement finished -- please verify."
+  - "Pathological tumor analysis improved, detection enhanced."
+  success_responses:
+  - Tumor detection completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Tumor analysis done. Review at your leisure.
+  - Task completed as specified.
+
+Cellvit:
+  modality: pathology image
+  refine_task: cell segmentation
+  default_args:
+    task: segment_cells
+    input_type: image
+  refine_responses:
+  - Cell segmentation refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Cell segmentation enhanced with improved boundary precision.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Cell segmentation refinement finished -- please verify."
+  - "Cellular analysis improved, segmentation boundaries enhanced."
+  success_responses:
+  - Cell segmentation completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Cellular segmentation done. Review at your leisure.
+  - Task completed as specified.
+
+cellsam:
+  modality: whole slide image
+  refine_task: cell segmentation on WSI
+  default_args:
+    task: segment_cells
+    input_type: wsi
+  refine_responses:
+  - WSI cell segmentation refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Whole slide cell segmentation enhanced with improved accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "WSI segmentation refinement finished -- please verify."
+  - "Whole slide analysis improved, cellular segmentation enhanced."
+  success_responses:
+  - WSI cell segmentation completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Whole slide cellular analysis done. Review at your leisure.
+  - Task completed as specified.
