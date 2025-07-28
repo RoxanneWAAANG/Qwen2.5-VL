@@ -3,7 +3,7 @@ python3 multi_tool_multiround.py \
 --tool_yaml corpus_pack/tool_meta.yaml \
 --single_round_dir tool_instruct \
 --out multi_round/multi_tool_multiround.jsonl \
---num 10
+--num 40000
 
 {
   "session_id": …,
@@ -73,7 +73,12 @@ class ToolRegistry:
             "LLaVA": ["RaTE-NER", "PMC-LLaMA"],  # Summary → NER/QA
             "RaTE-NER": ["PMC-LLaMA"],  # NER → QA
             "PMC-LLaMA": ["LLaVA"],  # QA → Summary
-            "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"]  # Specialist → Summary/QA
+            "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"],  # Specialist → Summary/QA
+            # Pathology workflow chains
+            "conch": ["Cellvit", "cellsam", "dsmil", "LLaVA"],  # Tissue classification → Segmentation/Detection
+            "dsmil": ["conch", "Cellvit", "LLaVA-Rad"],  # Tumor detection → Classification/Analysis
+            "Cellvit": ["conch", "dsmil", "LLaVA"],  # Cell segmentation → Classification/Detection
+            "cellsam": ["conch", "dsmil", "Cellvit", "LLaVA"],  # WSI segmentation → Analysis
         }
         
         # Add workflow successors
@@ -117,8 +122,8 @@ class ConvState:
     session_id: str
     base_image_id: Optional[str] = None
     base_image_path: Optional[str] = None
-    all_image_paths: List[str] = field(default_factory=list)  # NEW: track all image paths
-    has_second_image: bool = False  # NEW: track if we have a second image for registration
+    all_image_paths: List[str] = field(default_factory=list)
+    has_second_image: bool = False
     artifacts: Dict[str, Artifact] = field(default_factory=dict)
     conversation_context: List[str] = field(default_factory=list)
     tool_history: List[str] = field(default_factory=list)
@@ -172,7 +177,11 @@ class RealDataExtractor:
             "LLaVA": "llava_sum_dataset.jsonl",
             "RaTE-NER": "rate_ner_dataset.jsonl",
             "PMC-LLaMA": "pmc_llama_medqa_dataset.jsonl",
-            "SpecialistVLMs": "svlms_fundus_dataset.jsonl"
+            "SpecialistVLMs": "svlms_fundus_dataset.jsonl",
+            "conch": "instruction_2000_img_updated_conch.jsonl",
+            "dsmil": "instruction_2000_img_updated_conch.jsonl",
+            "Cellvit": "instruction_2000_img_updated_conch.jsonl",
+            "cellsam": "instruction_2000_img_updated_conch.jsonl"
         }
         self._cache: Dict[str, List[ToolExample]] = {}
         
@@ -210,14 +219,22 @@ class RealDataExtractor:
             conversations = data.get("conversations", [])
             if len(conversations) < 3:  # Need at least user → assistant → user → assistant
                 return None
+            
+            # Extract assistant tool call to check if it matches the requested tool
+            assistant_call = conversations[1]
+            actions = assistant_call.get("actions", [])
+            if not actions:
+                return None
+                
+            # Check if this example is for the requested tool
+            actual_tool_name = actions[0].get("API_name", "")
+            if actual_tool_name != tool_name:
+                return None  # Skip examples not for this specific tool
                 
             # Extract user prompt (first human message)
             user_prompt = conversations[0]["value"].replace("<image>\n", "").strip()
             
-            # Extract assistant tool call
-            assistant_call = conversations[1]
             thoughts = assistant_call.get("thoughts", "")
-            actions = assistant_call.get("actions", [])
             tool_params = actions[0]["API_params"] if actions else {}
             
             # Extract tool output (second human message contains tool output)
@@ -282,30 +299,51 @@ class DiversityPlanner:
             "new_image": 0.2        # Introduce completely new image
         }
         
-        # Chain templates by length
+        # Chain templates by length (UPDATED with pathology tools)
         self.chain_templates = {
             "short": [
+                # Existing chains
                 ["UltraSAM", "LLaVA-Rad"],
                 ["UniGradICON", "UltraSAM"], 
                 ["LLaVA", "RaTE-NER"],
                 ["HealthGPT", "SpecialistVLMs"],
                 ["IterNet", "LLaVA-Rad"],
                 ["LLaVA-Rad", "PMC-LLaMA"],
-                ["SpecialistVLMs", "LLaVA"]
+                ["SpecialistVLMs", "LLaVA"],
+                # NEW: Pathology chains
+                ["conch", "Cellvit"],
+                ["dsmil", "conch"],
+                ["Cellvit", "dsmil"],
+                ["cellsam", "conch"],
+                ["conch", "LLaVA"],
+                ["dsmil", "LLaVA-Rad"]
             ],
             "medium": [
+                # Existing chains
                 ["UniGradICON", "UltraSAM", "LLaVA-Rad"],
                 ["HealthGPT", "LLaVA-Rad", "LLaVA", "RaTE-NER"],
                 ["IterNet", "SpecialistVLMs", "PMC-LLaMA"],
                 ["UltraSAM", "LLaVA-Rad", "PMC-LLaMA", "LLaVA"],
                 ["UniGradICON", "LLaVA-Rad", "LLaVA", "PMC-LLaMA"],
-                ["HealthGPT", "UltraSAM", "SpecialistVLMs"]
+                ["HealthGPT", "UltraSAM", "SpecialistVLMs"],
+                # NEW: Pathology chains
+                ["conch", "Cellvit", "dsmil"],
+                ["dsmil", "conch", "LLaVA"],
+                ["cellsam", "conch", "Cellvit"],
+                ["Cellvit", "dsmil", "LLaVA-Rad"],
+                ["conch", "dsmil", "PMC-LLaMA"],
+                ["cellsam", "Cellvit", "LLaVA"]
             ],
             "long": [
+                # Existing chains
                 ["UniGradICON", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
                 ["HealthGPT", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
                 ["IterNet", "SpecialistVLMs", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["UniGradICON", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA", "SpecialistVLMs"]
+                ["UniGradICON", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA", "SpecialistVLMs"],
+                ["conch", "Cellvit", "dsmil", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
+                ["cellsam", "conch", "Cellvit", "dsmil", "LLaVA-Rad", "LLaVA"],
+                ["dsmil", "conch", "Cellvit", "LLaVA", "PMC-LLaMA"],
+                ["conch", "dsmil", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"]
             ]
         }
         
@@ -420,13 +458,16 @@ class ContextAwareBuilder:
     def _adapt_user_prompt(self, example: ToolExample, state: ConvState, turn_idx: int, chain: List[str], tool_name: str) -> str:
         """Adapt user prompt for conversation context."""
         if turn_idx == 0:
-            # First turn - handle registration special case
+            # First turn - handle special cases
             if tool_name == "UniGradICON":
                 # Registration needs two images
                 second_image_path = f"{state.base_image_path}_ref"  # Simulate second image
                 state.all_image_paths.append(second_image_path)
                 state.has_second_image = True
                 return f"<image>\n<image>\n{example.input_prompt}"
+            elif tool_name == "cellsam":
+                # WSI analysis - special handling
+                return f"<image>\n{example.input_prompt} (analyzing whole slide image)"
             else:
                 # Normal single image
                 if state.base_image_path:
@@ -445,6 +486,14 @@ class ContextAwareBuilder:
                     f"Now I have a second image. <image>\n{example.input_prompt}",
                     f"Here's an additional image for registration. <image>\n{example.input_prompt}",
                     f"I want to register this new image <image> with the previous one. {example.input_prompt}"
+                ]
+                return random.choice(context_phrases)
+            elif tool_name == "cellsam" and "cellvit" in [t.lower() for t in state.tool_history]:
+                # Transition from regular cell seg to WSI
+                context_phrases = [
+                    f"Now let me analyze the whole slide image version. <image>\n{example.input_prompt}",
+                    f"I want to extend this to WSI analysis. <image>\n{example.input_prompt}",
+                    f"Let's look at the complete slide. <image>\n{example.input_prompt}"
                 ]
                 return random.choice(context_phrases)
             elif turn_idx >= 2 and random.random() < 0.3:  # NEW: 30% chance to introduce new image after turn 2
@@ -521,7 +570,11 @@ class ContextAwareBuilder:
             "LLaVA": "summary_text",
             "RaTE-NER": "extracted_entities",
             "PMC-LLaMA": "qa_response",
-            "SpecialistVLMs": "specialist_report"
+            "SpecialistVLMs": "specialist_report",
+            "conch": "tissue_classification",
+            "dsmil": "tumor_detection",
+            "Cellvit": "cell_segmentation",
+            "cellsam": "wsi_segmentation"
         }
         
         artifact_type = artifact_types.get(tool_name, "output")
