@@ -51,6 +51,26 @@ UNIGRADICON_REG = {
     "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
 }
 
+SINGLE_TOOL_MULTIROUND = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/multi_round/single_tool_multiround.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
+MULTI_TOOL_MULTIROUND = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/multi_round/multi_tool_multiround.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
+MULTI_TOOL_SINGLE_ROUND = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/multi_round/multi_tool_single_round.jsonl",
+    "data_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/mimic-cxr-5k/5k",
+}
+
+PATH_2000 = {
+    "annotation_path": "/home/jack/Projects/yixin-llm/yixin-llm-data/yptests/Qwen2.5-VL/qwen-vl-finetune/build_dataset/tool_instruct/instruction_2000_img_updated.json",
+    "data_path": "" ,
+}
+
 
 data_dict = {
     "healthgpt_reconstruction": HEALTHGPT_RECONSTRUCTION,
@@ -63,6 +83,10 @@ data_dict = {
     "svlms_report_generation": SVLMS_REPORT_GENERATION,
     "ultrasam_segmentation": ULTRASAM_SEGMENTATION,
     "unigradicon_reg": UNIGRADICON_REG,
+    "single_tool_multi_round": SINGLE_TOOL_MULTIROUND,
+    "multi_tool_multi_round": MULTI_TOOL_MULTIROUND,
+    "multi_tool_single_round": MULTI_TOOL_SINGLE_ROUND,
+    "path_2000": PATH_2000,
 }
 
 
