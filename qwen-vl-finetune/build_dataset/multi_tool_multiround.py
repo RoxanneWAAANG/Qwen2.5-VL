@@ -60,7 +60,7 @@ class ToolRegistry:
         self._successors = self._build_successor_map()
 
     def _build_successor_map(self) -> Dict[str, List[str]]:
-        """Build logical tool succession mapping based on modality and task flow."""
+        """Build logical tool succession mapping based on medical workflow."""
         mapping: Dict[str, List[str]] = {name: [] for name in self.tools}
         
         # Define logical successors based on medical workflow
@@ -74,11 +74,6 @@ class ToolRegistry:
             "RaTE-NER": ["PMC-LLaMA"],  # NER → QA
             "PMC-LLaMA": ["LLaVA"],  # QA → Summary
             "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"],  # Specialist → Summary/QA
-            # Pathology workflow chains
-            "conch": ["Cellvit", "cellsam", "dsmil", "LLaVA"],  # Tissue classification → Segmentation/Detection
-            "dsmil": ["conch", "Cellvit", "LLaVA-Rad"],  # Tumor detection → Classification/Analysis
-            "Cellvit": ["conch", "dsmil", "LLaVA"],  # Cell segmentation → Classification/Detection
-            "cellsam": ["conch", "dsmil", "Cellvit", "LLaVA"],  # WSI segmentation → Analysis
         }
         
         # Add workflow successors
@@ -215,50 +210,46 @@ class RealDataExtractor:
     
     def _parse_example(self, tool_name: str, data: Dict[str, Any]) -> Optional[ToolExample]:
         """Parse a single example from the dataset."""
-        try:
-            conversations = data.get("conversations", [])
-            if len(conversations) < 3:  # Need at least user → assistant → user → assistant
-                return None
-            
-            # Extract assistant tool call to check if it matches the requested tool
-            assistant_call = conversations[1]
-            actions = assistant_call.get("actions", [])
-            if not actions:
-                return None
-                
-            # Check if this example is for the requested tool
-            actual_tool_name = actions[0].get("API_name", "")
-            if actual_tool_name != tool_name:
-                return None  # Skip examples not for this specific tool
-                
-            # Extract user prompt (first human message)
-            user_prompt = conversations[0]["value"].replace("<image>\n", "").strip()
-            
-            thoughts = assistant_call.get("thoughts", "")
-            tool_params = actions[0]["API_params"] if actions else {}
-            
-            # Extract tool output (second human message contains tool output)
-            tool_output_msg = conversations[2]["value"]
-            tool_output = tool_output_msg.split("Answer my first request:")[0].strip()
-            if tool_output.startswith(f"{tool_name} output:"):
-                tool_output = tool_output[len(f"{tool_name} output:"):].strip()
-                
-            # Extract final assistant response
-            assistant_response = conversations[3]["value"] if len(conversations) > 3 else ""
-            
-            return ToolExample(
-                tool_name=tool_name,
-                image_id=data["image_id"],
-                image_path=data["file_name"],
-                input_prompt=user_prompt,
-                tool_params=tool_params,
-                tool_output=tool_output,
-                assistant_response=assistant_response,
-                thoughts=thoughts
-            )
-        except Exception as e:
-            print(f"Error parsing example: {e}")
+        conversations = data.get("conversations", [])
+        if len(conversations) < 3:  # Need at least user → assistant → user → assistant
             return None
+        
+        # Extract assistant tool call to check if it matches the requested tool
+        assistant_call = conversations[1]
+        actions = assistant_call.get("actions", [])
+        if not actions:
+            return None
+            
+        # Check if this example is for the requested tool
+        actual_tool_name = actions[0].get("API_name", "")
+        if actual_tool_name != tool_name:
+            return None  # Skip examples not for this specific tool
+            
+        # Extract user prompt (first human message)
+        user_prompt = conversations[0]["value"].replace("<image>\n", "").strip()
+        
+        thoughts = assistant_call.get("thoughts", "")
+        tool_params = actions[0]["API_params"] if actions else {}
+        
+        # Extract tool output (second human message contains tool output)
+        tool_output_msg = conversations[2]["value"]
+        tool_output = tool_output_msg.split("Answer my first request:")[0].strip()
+        if tool_output.startswith(f"{tool_name} output:"):
+            tool_output = tool_output[len(f"{tool_name} output:"):].strip()
+            
+        # Extract final assistant response
+        assistant_response = conversations[3]["value"] if len(conversations) > 3 else ""
+        
+        return ToolExample(
+            tool_name=tool_name,
+            image_id=data["image_id"],
+            image_path=data["file_name"],
+            input_prompt=user_prompt,
+            tool_params=tool_params,
+            tool_output=tool_output,
+            assistant_response=assistant_response,
+            thoughts=thoughts
+        )
     
     def get_random_example(self, tool_name: str) -> Optional[ToolExample]:
         """Get a random example for a tool."""
@@ -299,51 +290,30 @@ class DiversityPlanner:
             "new_image": 0.2        # Introduce completely new image
         }
         
-        # Chain templates by length (UPDATED with pathology tools)
+        # Chain templates by length (REMOVED pathology tool chains - they will only appear randomly)
         self.chain_templates = {
             "short": [
-                # Existing chains
                 ["UltraSAM", "LLaVA-Rad"],
                 ["UniGradICON", "UltraSAM"], 
                 ["LLaVA", "RaTE-NER"],
                 ["HealthGPT", "SpecialistVLMs"],
                 ["IterNet", "LLaVA-Rad"],
                 ["LLaVA-Rad", "PMC-LLaMA"],
-                ["SpecialistVLMs", "LLaVA"],
-                # NEW: Pathology chains
-                ["conch", "Cellvit"],
-                ["dsmil", "conch"],
-                ["Cellvit", "dsmil"],
-                ["cellsam", "conch"],
-                ["conch", "LLaVA"],
-                ["dsmil", "LLaVA-Rad"]
+                ["SpecialistVLMs", "LLaVA"]
             ],
             "medium": [
-                # Existing chains
                 ["UniGradICON", "UltraSAM", "LLaVA-Rad"],
                 ["HealthGPT", "LLaVA-Rad", "LLaVA", "RaTE-NER"],
                 ["IterNet", "SpecialistVLMs", "PMC-LLaMA"],
                 ["UltraSAM", "LLaVA-Rad", "PMC-LLaMA", "LLaVA"],
                 ["UniGradICON", "LLaVA-Rad", "LLaVA", "PMC-LLaMA"],
-                ["HealthGPT", "UltraSAM", "SpecialistVLMs"],
-                # NEW: Pathology chains
-                ["conch", "Cellvit", "dsmil"],
-                ["dsmil", "conch", "LLaVA"],
-                ["cellsam", "conch", "Cellvit"],
-                ["Cellvit", "dsmil", "LLaVA-Rad"],
-                ["conch", "dsmil", "PMC-LLaMA"],
-                ["cellsam", "Cellvit", "LLaVA"]
+                ["HealthGPT", "UltraSAM", "SpecialistVLMs"]
             ],
             "long": [
-                # Existing chains
                 ["UniGradICON", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
                 ["HealthGPT", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
                 ["IterNet", "SpecialistVLMs", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["UniGradICON", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA", "SpecialistVLMs"],
-                ["conch", "Cellvit", "dsmil", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["cellsam", "conch", "Cellvit", "dsmil", "LLaVA-Rad", "LLaVA"],
-                ["dsmil", "conch", "Cellvit", "LLaVA", "PMC-LLaMA"],
-                ["conch", "dsmil", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"]
+                ["UniGradICON", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA", "SpecialistVLMs"]
             ]
         }
         
@@ -461,7 +431,7 @@ class ContextAwareBuilder:
             # First turn - handle special cases
             if tool_name == "UniGradICON":
                 # Registration needs two images
-                second_image_path = f"{state.base_image_path}_ref"  # Simulate second image
+                second_image_path = f"{state.base_image_path}"
                 state.all_image_paths.append(second_image_path)
                 state.has_second_image = True
                 return f"<image>\n<image>\n{example.input_prompt}"
@@ -480,7 +450,7 @@ class ContextAwareBuilder:
                 # Registration in later turn - introduce second image
                 state.has_second_image = True
                 # Add second image path (simulate or use from example)
-                second_image_path = f"{state.base_image_path}_ref"  # Simulate second image
+                second_image_path = f"{state.base_image_path}"
                 state.all_image_paths.append(second_image_path)
                 context_phrases = [
                     f"Now I have a second image. <image>\n{example.input_prompt}",
@@ -496,7 +466,7 @@ class ContextAwareBuilder:
                     f"Let's look at the complete slide. <image>\n{example.input_prompt}"
                 ]
                 return random.choice(context_phrases)
-            elif turn_idx >= 2 and random.random() < 0.3:  # NEW: 30% chance to introduce new image after turn 2
+            elif turn_idx >= 2 and random.random() < 0.3:
                 # Introduce completely new image
                 new_image_path = example.image_path  # Use example's image as new image
                 if new_image_path not in state.all_image_paths:
@@ -571,6 +541,7 @@ class ContextAwareBuilder:
             "RaTE-NER": "extracted_entities",
             "PMC-LLaMA": "qa_response",
             "SpecialistVLMs": "specialist_report",
+            # Pathology tool artifacts (kept for when they appear randomly)
             "conch": "tissue_classification",
             "dsmil": "tumor_detection",
             "Cellvit": "cell_segmentation",
