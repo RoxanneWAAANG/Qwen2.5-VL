@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import yaml
 
 # -----------------------------------------------------------------------------
-# Tool metadata and data extraction (reuse from previous script)
+# Tool metadata and data extraction
 # -----------------------------------------------------------------------------
 
 @dataclass
@@ -76,11 +76,7 @@ class RealDataExtractor:
             "LLaVA": "llava_sum_dataset.jsonl",
             "RaTE-NER": "rate_ner_dataset.jsonl",
             "PMC-LLaMA": "pmc_llama_medqa_dataset.jsonl",
-            "SpecialistVLMs": "svlms_fundus_dataset.jsonl",
-            "conch": "instruction_2000_img_updated_conch.jsonl",
-            "dsmil": "instruction_2000_img_updated_conch.jsonl",
-            "Cellvit": "instruction_2000_img_updated_conch.jsonl",
-            "cellsam": "instruction_2000_img_updated_conch.jsonl"
+            "SpecialistVLMs": "svlms_fundus_dataset.jsonl"
         }
         self._cache: Dict[str, List[ToolExample]] = {}
 
@@ -96,22 +92,20 @@ class RealDataExtractor:
             return []
 
         examples = []
-        try:
-            with dataset_file.open() as f:
-                for i, line in enumerate(f):
-                    if i >= max_examples:
-                        break
-                    data = json.loads(line.strip())
-                    example = self._parse_example(tool_name, data)
-                    if example:
-                        examples.append(example)
-        except Exception as e:
-            print(f"Error loading {tool_name} examples: {e}")
+        with dataset_file.open() as f:
+            for i, line in enumerate(f):
+                if i >= max_examples:
+                    break
+                data = json.loads(line.strip())
+                example = self._parse_example(tool_name, data)
+                if example:
+                    examples.append(example)
 
         self._cache[tool_name] = examples
         return examples
 
     def _parse_example(self, tool_name: str, data: Dict[str, Any]) -> Optional[ToolExample]:
+
         conversations = data.get("conversations", [])
         if len(conversations) < 3:
             return None
@@ -163,22 +157,20 @@ class MultiToolPlanner:
         self.registry = registry
         self.extractor = extractor
         
-        # Define logical tool combinations
+        # Define logical tool combinations (removed all pathology tool combinations)
         self.tool_combinations = {
             # Segmentation → Analysis workflows
             "segment_and_analyze": [
                 ["UltraSAM", "LLaVA-Rad"],  # Segment → Generate report
                 ["IterNet", "SpecialistVLMs"],  # Fundus segment → Specialist analysis
-                ["Cellvit", "conch"],  # Cell segment → Tissue classification  
-                ["cellsam", "dsmil"],  # WSI segment → Tumor detection
                 ["UltraSAM", "LLaVA"],  # Segment → Summarize
             ],
-            
+
             # Detection → Classification workflows  
             "detect_and_classify": [
-                ["dsmil", "conch"],  # Detect tumor → Classify tissue
-                ["conch", "Cellvit"],  # Classify tissue → Segment cells
-                ["dsmil", "LLaVA-Rad"],  # Detect tumor → Generate report
+                # ["dsmil", "conch"],  # Detect tumor → Classify tissue
+                # ["conch", "Cellvit"],  # Classify tissue → Segment cells
+                # ["dsmil", "LLaVA-Rad"],  # Detect tumor → Generate report
             ],
             
             # Enhancement → Analysis workflows
@@ -199,18 +191,15 @@ class MultiToolPlanner:
             # Complex 3-tool workflows
             "complex_workflow": [
                 ["UltraSAM", "LLaVA-Rad", "LLaVA"],  # Segment → Report → Summarize
-                ["dsmil", "conch", "LLaVA-Rad"],  # Detect → Classify → Report
                 ["HealthGPT", "UltraSAM", "LLaVA"],  # Enhance → Segment → Summarize
-                ["Cellvit", "dsmil", "conch"],  # Segment cells → Detect tumor → Classify
             ]
         }
         
         # Combination weights
         self.combination_weights = {
-            "segment_and_analyze": 0.3,
-            "detect_and_classify": 0.25,
-            "enhance_and_analyze": 0.2,
-            "analyze_and_summarize": 0.15,
+            "segment_and_analyze": 0.4,
+            "enhance_and_analyze": 0.3,
+            "analyze_and_summarize": 0.2,
             "complex_workflow": 0.1
         }
         
@@ -253,30 +242,30 @@ class MultiToolConversationBuilder:
         self.registry = registry
         self.extractor = extractor
         
-        # Highly diversified templates for complex questions that naturally require multiple tools
+        # Request templates (removed pathology_comprehensive)
         self.request_templates = {
-            "pathology_comprehensive": [
-                # Clinical assessment variations
-                "I need a thorough pathological assessment of this specimen. What do you see?",
-                "Can you provide a comprehensive histopathological evaluation of this slide?",
-                "What's your complete diagnostic impression of this tissue sample?",
-                "I'm looking for a detailed pathology workup - what are your findings?",
-                "Could you give me a full microscopic examination report for this case?",
+            # "pathology_comprehensive": [
+            #     # Clinical assessment variations
+            #     "I need a thorough pathological assessment of this specimen. What do you see?",
+            #     "Can you provide a comprehensive histopathological evaluation of this slide?",
+            #     "What's your complete diagnostic impression of this tissue sample?",
+            #     "I'm looking for a detailed pathology workup - what are your findings?",
+            #     "Could you give me a full microscopic examination report for this case?",
                 
-                # Concern-based inquiries
-                "I'm worried about malignancy in this biopsy. What's your assessment?",
-                "There might be something concerning here - can you take a look?",
-                "I need to rule out cancer in this specimen. What do you think?",
-                "This patient has concerning symptoms - what does the histology show?",
-                "I'm seeing some abnormal areas - can you help me evaluate them?",
+            #     # Concern-based inquiries
+            #     "I'm worried about malignancy in this biopsy. What's your assessment?",
+            #     "There might be something concerning here - can you take a look?",
+            #     "I need to rule out cancer in this specimen. What do you think?",
+            #     "This patient has concerning symptoms - what does the histology show?",
+            #     "I'm seeing some abnormal areas - can you help me evaluate them?",
                 
-                # Educational/learning context
-                "This is an interesting case for our tumor board - what's your analysis?",
-                "I'm presenting this at our pathology conference - help me understand the findings.",
-                "This is a teaching case - can you walk through the diagnostic features?",
-                "Our residents are struggling with this case - what would you highlight?",
-                "I want to use this for medical education - what are the key findings?"
-            ],
+            #     # Educational/learning context
+            #     "This is an interesting case for our tumor board - what's your analysis?",
+            #     "I'm presenting this at our pathology conference - help me understand the findings.",
+            #     "This is a teaching case - can you walk through the diagnostic features?",
+            #     "Our residents are struggling with this case - what would you highlight?",
+            #     "I want to use this for medical education - what are the key findings?"
+            # ],
             
             "radiology_comprehensive": [
                 # Diagnostic urgency variations
@@ -430,7 +419,7 @@ class MultiToolConversationBuilder:
             ]
         }
         
-        # Task descriptions for each tool
+        # Task descriptions for each tool (removed pathology tools)
         self.task_descriptions = {
             "UltraSAM": "segment the ultrasound image",
             "IterNet": "perform fundus segmentation", 
@@ -440,11 +429,7 @@ class MultiToolConversationBuilder:
             "HealthGPT": "enhance the image quality",
             "UniGradICON": "register the images",
             "RaTE-NER": "extract medical entities",
-            "PMC-LLaMA": "answer medical questions",
-            "conch": "classify the tissue type",
-            "dsmil": "detect any tumors",
-            "Cellvit": "segment the cells",
-            "cellsam": "analyze the whole slide image"
+            "PMC-LLaMA": "answer medical questions"
         }
         
     def build_multi_tool_conversation(self, tool_chain: List[str]) -> Dict[str, Any]:
@@ -475,11 +460,26 @@ class MultiToolConversationBuilder:
         # Create final assistant response
         final_response = self._create_final_multi_tool_response(tool_chain, examples)
         
+        # Handle image field properly
+        image_field = base_example.image_path
+        all_images = [base_example.image_path]
+        
+        # For registration tasks, we need to handle multiple images
+        if "UniGradICON" in tool_chain:
+            # Add a second image for registration (simulate or use another example)
+            if len(examples) > 1 and examples[1].image_path != base_example.image_path:
+                second_image = examples[1].image_path
+            else:
+                # Generate a related image path for registration
+                second_image = base_example.image_path.replace('.jpg', '_followup.jpg').replace('.png', '_followup.png')
+            all_images.append(second_image)
+            image_field = all_images  # Use list for multiple images
+        
         return {
             "session_id": str(uuid.uuid4()),
             "image_id": base_example.image_id,
-            "image": base_example.image_path,
-            "file_name": base_example.image_path,
+            "image": image_field,
+            "file_name": base_example.image_path,  # Primary image
             "conversations": [
                 {"from": "human", "value": user_request},
                 assistant_response,
@@ -497,22 +497,14 @@ class MultiToolConversationBuilder:
         else:
             image_prefix = "<image>\n"
             
-            # Determine template category based on tool combination with more diversity
-            pathology_tools = {"Cellvit", "cellsam", "dsmil", "conch"}
-            segmentation_tools = {"UltraSAM", "IterNet", "Cellvit"}
-            analysis_tools = {"LLaVA-Rad", "SpecialistVLMs", "conch"}
+            # Determine template category based on tool combination
+            segmentation_tools = {"UltraSAM", "IterNet"}
+            analysis_tools = {"LLaVA-Rad", "SpecialistVLMs"}
             enhancement_tools = {"HealthGPT", "UniGradICON"}
             summarization_tools = {"LLaVA", "RaTE-NER", "PMC-LLaMA"}
             
             # Primary category selection with weighted randomness
-            if any(tool in pathology_tools for tool in tool_chain):
-                # Pathology cases have multiple subcategories
-                pathology_categories = ["pathology_comprehensive", "subspecialty_focused", "second_opinion", "research_academic"]
-                if any(tool in ["dsmil"] for tool in tool_chain):
-                    pathology_categories.extend(["screening_detection", "clinical_decision_support"])
-                template_category = random.choice(pathology_categories)
-                
-            elif any(tool in segmentation_tools for tool in tool_chain) and any(tool in analysis_tools for tool in tool_chain):
+            if any(tool in segmentation_tools for tool in tool_chain) and any(tool in analysis_tools for tool in tool_chain):
                 # Segmentation + Analysis workflows
                 seg_analysis_categories = ["radiology_comprehensive", "clinical_decision_support", "multi_modal_analysis"]
                 template_category = random.choice(seg_analysis_categories)
@@ -534,7 +526,7 @@ class MultiToolConversationBuilder:
                 
             else:
                 # Default categories with variety
-                default_categories = ["radiology_comprehensive", "pathology_comprehensive", "clinical_decision_support"]
+                default_categories = ["radiology_comprehensive", "clinical_decision_support"]
                 template_category = random.choice(default_categories)
             
         # Select appropriate template
@@ -672,7 +664,7 @@ class MultiToolConversationBuilder:
         return random.choice(response_templates[style])
         
     def _get_tool_reasoning(self, tool_name: str) -> str:
-        """Get reasoning for why each tool is needed."""
+        """Get reasoning for why each tool is needed (removed pathology tools)."""
         reasoning_map = {
             "UltraSAM": "identify and segment the anatomical structures",
             "IterNet": "perform detailed fundus analysis",
@@ -682,11 +674,7 @@ class MultiToolConversationBuilder:
             "HealthGPT": "enhance image quality for better visualization",
             "UniGradICON": "align and register the images properly",
             "RaTE-NER": "extract specific medical entities and terminology",
-            "PMC-LLaMA": "provide evidence-based medical insights",
-            "conch": "determine tissue type and characteristics",
-            "dsmil": "detect any tumor or abnormal regions",
-            "Cellvit": "analyze cellular structures and boundaries",
-            "cellsam": "examine the complete slide architecture"
+            "PMC-LLaMA": "provide evidence-based medical insights"
         }
         return reasoning_map.get(tool_name, f"analyze using {tool_name}")
         
@@ -712,26 +700,11 @@ class MultiToolConversationBuilder:
         ]
         style = random.choice(reference_styles)
         
-        # Generate diverse question references based on tool combination
-        pathology_tools = {"Cellvit", "cellsam", "dsmil", "conch"}
+        # Generate diverse question references based on tool combination (removed pathology section)
         radiology_tools = {"UltraSAM", "IterNet", "LLaVA-Rad", "SpecialistVLMs"}
         enhancement_tools = {"HealthGPT", "UniGradICON"}
         
-        if any(tool in pathology_tools for tool in tool_chain):
-            if style == "direct_question":
-                questions = ["What do you see in this pathology slide?", "What's your assessment of this tissue sample?", "Can you evaluate this biopsy?"]
-            elif style == "clinical_inquiry":
-                questions = ["What are your findings on this specimen?", "What's your diagnostic impression?", "What pathological changes do you observe?"]
-            elif style == "assessment_request":
-                questions = ["Please assess this histological sample.", "I need your evaluation of this tissue.", "Can you analyze this pathology case?"]
-            elif style == "consultation_query":
-                questions = ["What's your opinion on this case?", "I'd like your consultation on these findings.", "Can you provide your expert assessment?"]
-            elif style == "diagnostic_question":
-                questions = ["What's your diagnosis based on these findings?", "What diagnostic conclusions can you draw?", "What's your interpretation of this case?"]
-            else:  # evaluation_request
-                questions = ["Please evaluate this specimen thoroughly.", "I need a comprehensive assessment.", "Can you provide detailed findings?"]
-                
-        elif any(tool in radiology_tools for tool in tool_chain):
+        if any(tool in radiology_tools for tool in tool_chain):
             if style == "direct_question":
                 questions = ["What can you tell me about this medical image?", "What do you see in this scan?", "What are the findings?"]
             elif style == "clinical_inquiry":
@@ -879,11 +852,46 @@ class MultiToolConversationBuilder:
 # Main generation function
 # -----------------------------------------------------------------------------
 
+def validate_conversation_images(conversation: Dict[str, Any]) -> bool:
+    """Validate that the number of <image> tokens matches the number of provided images."""
+    if not conversation or "conversations" not in conversation:
+        return False
+        
+    # Count <image> tokens in all messages
+    total_image_tokens = 0
+    for msg in conversation["conversations"]:
+        if msg.get("from") == "human":
+            content = msg.get("value", "")
+            total_image_tokens += content.count("<image>")
+    
+    # Count actual images provided - check both old and new formats
+    images_field = conversation.get("images", [])  # New format
+    if not images_field:
+        # Fallback to old format for compatibility
+        image_field = conversation.get("image", "")
+        if isinstance(image_field, list):
+            actual_images = len([img for img in image_field if img])
+        elif isinstance(image_field, str) and image_field:
+            actual_images = 1
+        else:
+            actual_images = 0
+    else:
+        # New format - images is a list
+        actual_images = len([img for img in images_field if img])
+    
+    # Validate match
+    if total_image_tokens != actual_images:
+        print(f"WARNING: Image token mismatch - Found {total_image_tokens} <image> tokens but {actual_images} actual images")
+        return False
+        
+    return True
+
+
 def generate_multi_tool_conversation(
     registry: ToolRegistry, 
     extractor: RealDataExtractor
 ) -> Dict[str, Any]:
-    """Generate a single multi-tool conversation."""
+    """Generate a single multi-tool conversation with validation."""
     planner = MultiToolPlanner(registry, extractor)
     builder = MultiToolConversationBuilder(registry, extractor)
     
@@ -894,7 +902,13 @@ def generate_multi_tool_conversation(
         
     # Build conversation
     conversation = builder.build_multi_tool_conversation(tool_chain)
-    return conversation
+    
+    # Validate before returning
+    if conversation and validate_conversation_images(conversation):
+        return conversation
+    else:
+        print(f"Skipping invalid conversation for tools: {tool_chain}")
+        return {}
 
 # -----------------------------------------------------------------------------
 # CLI interface
@@ -912,16 +926,24 @@ def main():
     extractor = RealDataExtractor(args.single_round_dir)
 
     conversations = []
-    for _ in range(args.num):
+    failed_count = 0
+    
+    for i in range(args.num):
         conversation = generate_multi_tool_conversation(registry, extractor)
         if conversation:
             conversations.append(conversation)
+        else:
+            failed_count += 1
 
+    # Save results
     with open(args.out, "w") as f:
         for conversation in conversations:
-            f.write(json.dumps(conversation) + "\n")
+            f.write(json.dumps(conversation, ensure_ascii=False) + "\n")
 
     print(f"Generated {len(conversations)} multi-tool conversations and saved to {args.out}")
+    if failed_count > 0:
+        print(f"Warning: {failed_count} conversations failed to generate")
+        print("Consider checking your dataset files and tool configurations")
 
 if __name__ == "__main__":
     main()
