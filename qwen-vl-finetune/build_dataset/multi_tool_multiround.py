@@ -48,19 +48,15 @@ class Tool:
 
 
 class ToolRegistry:
-    """Enhanced wrapper for tool-metadata lookup with successor logic."""
-
-    def __init__(self, yaml_path: Union[str, Path]):
+  def __init__(self, yaml_path: Union[str, Path]):
         with Path(yaml_path).open() as f:
             raw = yaml.safe_load(f)
         self.tools: Dict[str, Tool] = {name: Tool.from_dict(name, cfg) for name, cfg in raw.items()}
         self._successors = self._build_successor_map()
 
     def _build_successor_map(self) -> Dict[str, List[str]]:
-        """Build logical tool succession mapping based on medical workflow."""
         mapping: Dict[str, List[str]] = {name: [] for name in self.tools}
-        
-        # Define logical successors based on medical workflow
+
         workflow_chains = {
             "UniGradICON": ["UltraSAM", "LLaVA-Rad", "HealthGPT"],  # Registration → Analysis
             "UltraSAM": ["LLaVA-Rad", "SpecialistVLMs"],  # Segmentation → Report
@@ -119,7 +115,6 @@ class Artifact:
 
 @dataclass
 class ConvState:
-    """Enhanced conversation state with artifact tracking."""
     session_id: str
     all_image_paths: List[str] = field(default_factory=list)
     has_second_image: bool = False
@@ -199,7 +194,7 @@ class RealDataExtractor:
             "MedSAM": ["MRI", "CT", "X-ray", "Histology", "Gross"],
             "G-Seg": ["MRI", "CT", "X-ray", "Histology"],
             "ChatCAD": ["X-ray"],
-            "ChatCAD+": ["Any"],  # Can work with or without images
+            "ChatCAD+": ["Any"],
         }
 
         self._cache: Dict[str, List[ToolExample]] = {}
