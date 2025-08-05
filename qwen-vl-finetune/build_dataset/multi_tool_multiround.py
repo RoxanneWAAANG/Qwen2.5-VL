@@ -256,8 +256,8 @@ class RealDataExtractor:
         
         return ToolExample(
             tool_name=tool_name,
-            image_id=data["image_id"],
-            image_path=data["file_name"],
+            image_id=data.get("image_id") or " ",
+            image_path=data.get("image"),
             input_prompt=user_prompt,
             tool_params=tool_params,
             tool_output=tool_output,
