@@ -17,7 +17,6 @@ deepspeed=./scripts/zero3_offload.json
 # ----------------------------
 # Model configuration
 # ----------------------------
-# llm=Qwen/Qwen2.5-VL-7B-Instruct
 llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-7B-Instruct'
 
 # ----------------------------
@@ -28,9 +27,9 @@ batch_size=1
 grad_accum_steps=128
 epochs=1.0
 
-# Effective batch size = 2 * 2 * 32 = 128
-# Steps per epoch = 116,000 / 128 = 906 steps
-# Total steps = 906 steps
+# Effective batch size = 1 * 2 * 128 = 256
+# Steps per epoch = 212,449 / 256 = 830 steps
+# Total steps = 830 steps
 
 # ----------------------------
 # Training entry point
@@ -53,11 +52,10 @@ logging_dir="${output_dir}/tensorboard_logs"
 # Calculate dynamic save steps
 # ----------------------------
 # Save every ~10% of total steps
-total_steps=$((116000 / 128))  # 906 steps for 1 epoch
-save_steps=$((total_steps / 10))  # Save every ~90 steps
-if [ $save_steps -lt 50 ]; then
-    save_steps=50
-fi
+total_samples=212449
+effective_batch_size=$((${NPROC_PER_NODE} * ${batch_size} * ${grad_accum_steps}))
+total_steps=$((${total_samples} / ${effective_batch_size}))
+save_steps=$((${total_steps} / 4))
 
 # Training arguments
 args="
@@ -80,7 +78,7 @@ args="
     --eval_strategy no \
     --save_strategy steps \
     --save_steps ${save_steps} \
-    --save_total_limit 3 \
+    --save_total_limit 5 \
     --learning_rate ${lr} \
     --weight_decay 0.01 \
     --warmup_ratio 0.1 \
