@@ -6,13 +6,11 @@ python3 multi_tool_multiround.py \
 --num 100000
 
 {
-  "session_id": …,
-  "image_id": …,
   "image": …,
-  "file_name": …,
   "conversations": [ {from, value, thoughts, actions, …}, … ]
 }
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,8 +20,19 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
+from enum import Enum
 
 import yaml
+
+# -----------------------------------------------------------------------------
+# Scenario Definitions ---------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+class ConversationScenario(Enum):
+    SINGLE_IMAGE = "single_image"  # Scenario 1: One image throughout
+    REGISTRATION_FROM_START = "registration_from_start"  # Scenario 2: Two images from start
+    REGISTRATION_ADD_LATER = "registration_add_later"  # Scenario 3: Add second image later
+    SWITCH_IMAGE_MID = "switch_image_mid"  # Scenario 4: Switch to different image
 
 # -----------------------------------------------------------------------------
 # Tool metadata ----------------------------------------------------------------
@@ -65,34 +74,27 @@ class ToolRegistry:
         
         # Define logical successors based on medical workflow
         workflow_chains = {
-            "UniGradICON": ["UltraSAM", "LLaVA-Rad", "HealthGPT"],  # Registration → Analysis
-            "UltraSAM": ["LLaVA-Rad", "SpecialistVLMs"],  # Segmentation → Report
-            "HealthGPT": ["LLaVA-Rad", "UltraSAM"],  # Reconstruction → Analysis
-            "IterNet": ["SpecialistVLMs", "LLaVA-Rad"],  # Fundus → Specialist analysis
-            "LLaVA-Rad": ["LLaVA", "PMC-LLaMA"],  # Report → Summary/QA
-            "LLaVA": ["RaTE-NER", "PMC-LLaMA"],  # Summary → NER/QA
-            "RaTE-NER": ["PMC-LLaMA"],  # NER → QA
-            "PMC-LLaMA": ["LLaVA"],  # QA → Summary
-            "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"],  # Specialist → Summary/QA
-            "LLaVA-Med": ["PMC-LLaMA", "ChatCAD-G", "BiomedClip", "ChatCAD-R"],  # VQA -> QA/Report/Classification
-            "BiomedClip": ["LLaVA-Med", "grounding dino", "ChatCAD-G", "SpecialistVLMs"],  # Classification -> VQA/Grounding/Report
-            "grounding dino": ["MedSAM", "grounding dino + MedSAM", "LLaVA-Med", "ChatCAD"],  # Grounding -> Segmentation/VQA/Report
-            "MedSAM": ["LLaVA-Med", "ChatCAD-G", "SpecialistVLMs", "BiomedClip"],  # Segmentation -> VQA/Report/Analysis
-            "grounding dino + MedSAM": ["LLaVA-Med", "ChatCAD-G", "MedSAM", "SpecialistVLMs"],  # Combined G+Seg -> VQA/Report
-            "ChatCAD-G": ["ChatCAD-R", "LLaVA-Med", "PMC-LLaMA"],  # Report -> RAG/VQA/QA
-            "ChatCAD-R": ["LLaVA-Med", "PMC-LLaMA", "ChatCAD-G"],  # RAG -> VQA/QA/Report
+            "UniGradICON": ["UltraSAM", "LLaVA-Rad", "HealthGPT"],
+            "UltraSAM": ["LLaVA-Rad", "SpecialistVLMs"],
+            "HealthGPT": ["LLaVA-Rad", "UltraSAM"],
+            "IterNet": ["SpecialistVLMs", "LLaVA-Rad"],
+            "LLaVA-Rad": ["LLaVA", "PMC-LLaMA"],
+            "LLaVA": ["RaTE-NER", "PMC-LLaMA"],
+            "RaTE-NER": ["PMC-LLaMA"],
+            "PMC-LLaMA": ["LLaVA"],
+            "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"],
+            "LLaVA-Med": ["PMC-LLaMA", "ChatCAD-G", "BiomedClip", "ChatCAD-R"],
+            "BiomedClip": ["LLaVA-Med", "grounding dino", "ChatCAD-G", "SpecialistVLMs"],
+            "grounding dino": ["MedSAM", "grounding dino + MedSAM", "LLaVA-Med", "ChatCAD"],
+            "MedSAM": ["LLaVA-Med", "ChatCAD-G", "SpecialistVLMs", "BiomedClip"],
+            "grounding dino + MedSAM": ["LLaVA-Med", "ChatCAD-G", "MedSAM", "SpecialistVLMs"],
+            "ChatCAD-G": ["ChatCAD-R", "LLaVA-Med", "PMC-LLaMA"],
+            "ChatCAD-R": ["LLaVA-Med", "PMC-LLaMA", "ChatCAD-G"],
         }
         
         # Add workflow successors
         for tool, successors in workflow_chains.items():
             mapping[tool].extend(successors)
-        
-        # Add some random cross-modal possibilities
-        names = list(self.tools)
-        for tool in names:
-            # Add 2-3 random other tools as potential successors
-            others = [t for t in names if t != tool and t not in mapping[tool]]
-            mapping[tool].extend(random.sample(others, min(3, len(others))))
         
         return mapping
 
@@ -111,7 +113,7 @@ class ToolRegistry:
 class Artifact:
     """Represents a generated artifact that can be referenced later."""
     id: str
-    type: str  # "image", "mask", "report", "summary", "entities", etc.
+    type: str
     source_tool: str
     content: Optional[str] = None
     file_path: Optional[str] = None
@@ -120,12 +122,15 @@ class Artifact:
 
 @dataclass
 class ConvState:
-    """Enhanced conversation state with artifact tracking."""
+    """Enhanced conversation state with scenario tracking."""
     session_id: str
+    scenario: ConversationScenario
     base_image_id: Optional[str] = None
     base_image_path: Optional[str] = None
     all_image_paths: List[str] = field(default_factory=list)
     has_second_image: bool = False
+    second_image_added_at_turn: int = -1
+    image_switch_turn: int = -1
     artifacts: Dict[str, Artifact] = field(default_factory=dict)
     conversation_context: List[str] = field(default_factory=list)
     tool_history: List[str] = field(default_factory=list)
@@ -184,15 +189,33 @@ class RealDataExtractor:
             "DSMIL": "DSMIL.jsonl",
             "CellViT": "CellViT.jsonl",
             "CellSAM": "CellSAM.jsonl",
-            "LLaVA-Med": "LLaVA-Med.jsonl",           # VQA on medical images
-            "BiomedClip": "BiomedClip.jsonl", # Medical image classification
-            "grounding dino": "GD.jsonl",     # Object grounding in medical images
-            "MedSAM": "MedSAM.jsonl",        # Medical segmentation with bbox
-            "grounding dino + MedSAM": "GD_MedSAM.jsonl",               # Combined grounding + segmentation
-            "ChatCAD-G": "ChatCAD-G.jsonl",            # Medical report generation
-            "ChatCAD-R": "ChatCAD-R.jsonl",         # RAG for medical queries
+            "LLaVA-Med": "LLaVA-Med.jsonl",
+            "BiomedClip": "BiomedClip.jsonl",
+            "grounding dino": "GD.jsonl",
+            "MedSAM": "MedSAM.jsonl",
+            "grounding dino + MedSAM": "GD_MedSAM.jsonl",
+            "ChatCAD-G": "ChatCAD-G.jsonl",
+            "ChatCAD-R": "ChatCAD-R.jsonl",
         }
         self._cache: Dict[str, List[ToolExample]] = {}
+        self._image_pool: List[str] = []
+        self._load_image_pool()
+        
+    def _load_image_pool(self) -> None:
+        """Load a pool of different image paths for multi-image scenarios."""
+        try:
+            for tool_name in list(self.tool_mapping.keys())[:5]:  # Load from first 5 tools
+                examples = self.load_tool_examples(tool_name, max_examples=50)
+                for example in examples:
+                    if example.image_path and example.image_path not in self._image_pool:
+                        self._image_pool.append(example.image_path)
+        except Exception as e:
+            print(f"Warning: Could not load image pool: {e}")
+    
+    def get_different_image(self, exclude_paths: List[str]) -> Optional[str]:
+        """Get a different image path from the pool."""
+        available = [img for img in self._image_pool if img not in exclude_paths]
+        return random.choice(available) if available else None
         
     def load_tool_examples(self, tool_name: str, max_examples: int = 100000) -> List[ToolExample]:
         """Load real examples for a specific tool."""
@@ -225,39 +248,43 @@ class RealDataExtractor:
     def _parse_example(self, tool_name: str, data: Dict[str, Any]) -> Optional[ToolExample]:
         """Parse a single example from the dataset."""
         conversations = data.get("conversations", [])
-        if len(conversations) < 3:  # Need at least user → assistant → user → assistant
+        if len(conversations) < 3:
             return None
         
-        # Extract assistant tool call to check if it matches the requested tool
         assistant_call = conversations[1]
         actions = assistant_call.get("actions", [])
         if not actions:
             return None
             
-        # Check if this example is for the requested tool
         actual_tool_name = actions[0].get("API_name", "")
         if actual_tool_name != tool_name:
-            return None  # Skip examples not for this specific tool
+            return None
             
-        # Extract user prompt (first human message)
-        user_prompt = conversations[0]["value"].replace("<image>\n", "").strip()
+        # FIXED: Clean all image tags from input prompt
+        user_prompt = conversations[0]["value"]
+        user_prompt = user_prompt.replace("<image>\n", "").replace("<image>", "").strip()
         
         thoughts = assistant_call.get("thoughts", "")
         tool_params = actions[0]["API_params"] if actions else {}
         
-        # Extract tool output (second human message contains tool output)
         tool_output_msg = conversations[2]["value"]
         tool_output = tool_output_msg.split("Answer my first request:")[0].strip()
         if tool_output.startswith(f"{tool_name} output:"):
             tool_output = tool_output[len(f"{tool_name} output:"):].strip()
             
-        # Extract final assistant response
         assistant_response = conversations[3]["value"] if len(conversations) > 3 else ""
+        
+        # Handle potentially nested image paths
+        image_data = data.get("image") or data.get("images")
+        if isinstance(image_data, list):
+            image_path = image_data[0] if image_data else None
+        else:
+            image_path = image_data
         
         return ToolExample(
             tool_name=tool_name,
             image_id=data.get("image_id") or " ",
-            image_path=data.get("image"),
+            image_path=image_path,
             input_prompt=user_prompt,
             tool_params=tool_params,
             tool_output=tool_output,
@@ -287,129 +314,92 @@ class EnhancedSingleRoundBank:
 
 
 # -----------------------------------------------------------------------------
-# Diversity planners -----------------------------------------------------------
+# Scenario-aware conversation planning ----------------------------------------
 # -----------------------------------------------------------------------------
 
-class DiversityPlanner:
-    """Plans conversation chains with diversity strategy."""
+class ScenarioPlanner:
+    """Plans conversation chains based on specific scenarios."""
     
     def __init__(self, registry: ToolRegistry, bank: EnhancedSingleRoundBank):
         self.registry = registry
         self.bank = bank
-        self.pathology_tools = ["CONCH", "DSMIL", "CellViT", "CellSAM"]
         
-        # Image introduction scenarios
-        self.image_scenarios = {
-            "same_image": 0.5,           # Continue with same image(s)
-            "add_for_comparison": 0.2,   # Add second image for comparison
-            "add_for_registration": 0.15, # Add second image for registration
-            "new_image": 0.15            # Introduce completely new image
+        # Scenario probabilities
+        self.scenario_weights = {
+            ConversationScenario.SINGLE_IMAGE: 0.5,
+            ConversationScenario.REGISTRATION_FROM_START: 0.2,
+            ConversationScenario.REGISTRATION_ADD_LATER: 0.2,
+            ConversationScenario.SWITCH_IMAGE_MID: 0.1
         }
         
-        # Chain templates by length (REMOVED pathology tool chains - they will only appear randomly)
-        self.chain_templates = {
-            "short": [
-                ["UltraSAM", "LLaVA-Rad"],
-                ["UniGradICON", "UltraSAM"], 
-                ["LLaVA", "RaTE-NER"],
-                ["HealthGPT", "SpecialistVLMs"],
-                ["IterNet", "LLaVA-Rad"],
-                ["LLaVA-Rad", "PMC-LLaMA"],
-                ["SpecialistVLMs", "LLaVA"],
-                ["BiomedClip", "LLaVA-Med"],              # Classification -> VQA
-                ["grounding dino", "MedSAM"],             # Grounding -> Segmentation
-                ["MedSAM", "ChatCAD-G"],                    # Segmentation -> Report
-                ["LLaVA-Med", "ChatCAD-G"],                 # VQA -> Report
-                ["grounding dino + MedSAM", "LLaVA-Med"],                   # Combined Grounding+Seg -> VQA
-                ["ChatCAD-G", "ChatCAD-R"],                  # Report -> RAG
-                ["BiomedClip", "ChatCAD-G"],                # Classification -> Report
-                ["LLaVA-Med", "PMC-LLaMA"],               # VQA -> Medical QA
+        # Tool chains for different scenarios
+        self.scenario_chains = {
+            ConversationScenario.SINGLE_IMAGE: [
+                ["UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER"],  # Complete imaging pipeline
+                ["BiomedClip", "LLaVA-Med", "ChatCAD-G"],  # Classification -> VQA -> Report
+                ["grounding dino", "MedSAM", "ChatCAD-G", "PMC-LLaMA"],  # Detection workflow
+                ["HealthGPT", "SpecialistVLMs", "LLaVA"],  # Enhancement workflow
             ],
-            "medium": [
-                ["UniGradICON", "UltraSAM", "LLaVA-Rad"],
-                ["HealthGPT", "LLaVA-Rad", "LLaVA", "RaTE-NER"],
-                ["IterNet", "SpecialistVLMs", "PMC-LLaMA"],
-                ["UltraSAM", "LLaVA-Rad", "PMC-LLaMA", "LLaVA"],
-                ["UniGradICON", "LLaVA-Rad", "LLaVA", "PMC-LLaMA"],
-                ["HealthGPT", "UltraSAM", "SpecialistVLMs"],
-                ["BiomedClip", "grounding dino", "MedSAM", "ChatCAD-G"],      # Classify -> Ground -> Segment -> Report
-                ["LLaVA-Med", "grounding dino + MedSAM", "ChatCAD-G"],                         # VQA -> Combined Seg -> Report
-                ["grounding dino", "MedSAM", "LLaVA-Med", "ChatCAD-R"],     # Ground -> Seg -> VQA -> RAG
-                ["BiomedClip", "LLaVA-Med", "ChatCAD-G", "PMC-LLaMA"],       # Classify -> VQA -> Report -> QA
-                ["HealthGPT", "BiomedClip", "LLaVA-Med"],                  # Enhance -> Classify -> VQA
-                ["UltraSAM", "LLaVA-Med", "ChatCAD-G"],                      # Segment -> VQA -> Report
-                ["UniGradICON", "BiomedClip", "ChatCAD-G"],                  # Register -> Classify -> Report
+            ConversationScenario.REGISTRATION_FROM_START: [
+                ["UniGradICON", "UltraSAM", "LLaVA-Rad"],  # Registration first
+                ["UniGradICON", "BiomedClip", "ChatCAD-G"],  # Registration -> analysis
             ],
-            "long": [
-                ["UniGradICON", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["HealthGPT", "UltraSAM", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["IterNet", "SpecialistVLMs", "LLaVA", "RaTE-NER", "PMC-LLaMA"],
-                ["UniGradICON", "LLaVA-Rad", "LLaVA", "RaTE-NER", "PMC-LLaMA", "SpecialistVLMs"],
-                ["BiomedClip", "grounding dino", "MedSAM", "LLaVA-Med", "ChatCAD-G", "ChatCAD-R"],  # Full pipeline
-                ["UniGradICON", "BiomedClip", "grounding dino + MedSAM", "LLaVA-Med", "ChatCAD-G", "PMC-LLaMA"],   # Registration workflow
-                ["HealthGPT", "grounding dino", "MedSAM", "LLaVA-Med", "ChatCAD-G", "PMC-LLaMA"], # Enhancement workflow
-                ["BiomedClip", "LLaVA-Med", "grounding dino + MedSAM", "ChatCAD-G", "ChatCAD-R", "PMC-LLaMA"],      # Analysis workflow
-                ["UltraSAM", "BiomedClip", "LLaVA-Med", "ChatCAD-G", "RaTE-NER", "PMC-LLaMA"],  # Mixed workflow
+            ConversationScenario.REGISTRATION_ADD_LATER: [
+                ["UltraSAM", "LLaVA-Rad", "UniGradICON", "ChatCAD-G"],  # Add registration later
+                ["BiomedClip", "LLaVA-Med", "UniGradICON", "PMC-LLaMA"],  # Add registration mid-chain
+            ],
+            ConversationScenario.SWITCH_IMAGE_MID: [
+                ["UltraSAM", "BiomedClip", "LLaVA-Med", "ChatCAD-G"],  # Switch in middle
+                ["grounding dino", "HealthGPT", "SpecialistVLMs"],  # Switch after first two
             ]
         }
         
-        # Diversity weights
-        self.length_weights = {"short": 0.4, "medium": 0.4, "long": 0.2}
-        
-    def plan_conversation(self) -> List[str]:
-        """Plan a diverse conversation chain."""
-        # Select chain length
-        length = random.choices(
-            list(self.length_weights.keys()),
-            weights=list(self.length_weights.values())
+    def plan_conversation(self) -> Tuple[List[str], ConversationScenario]:
+        """Plan a conversation with a specific scenario."""
+        # Select scenario
+        scenario = random.choices(
+            list(self.scenario_weights.keys()),
+            weights=list(self.scenario_weights.values())
         )[0]
         
-        # Select template from that length category
-        templates = self.chain_templates[length]
-        base_chain = random.choice(templates)
+        # Select chain for scenario
+        chains = self.scenario_chains[scenario]
+        base_chain = random.choice(chains)
         
         # Verify tools have available data
         available_chain = []
         for tool in base_chain:
             example = self.bank.get_example(tool)
-            if example:  # Only include tools with available data
+            if example:
                 available_chain.append(tool)
-
-        if random.random() < 0.2:
-            ptool = random.choice(self.pathology_tools)
-            if self.bank.get_example(ptool):
-                pos = random.randint(0, len(available_chain))
-                available_chain.insert(pos, ptool)
-            
+        
         # Ensure minimum chain length
         if len(available_chain) < 2:
-            # Fall back to any available tools
-            all_tools = list(self.registry.tools.keys())
-            available_tools = [t for t in all_tools if self.bank.get_example(t)]
-            if len(available_tools) >= 2:
-                available_chain = random.sample(available_tools, 2)
+            # Fallback to single image scenario
+            scenario = ConversationScenario.SINGLE_IMAGE
+            available_chain = ["UltraSAM", "LLaVA-Rad"]  # Simple fallback
                 
-        return available_chain
+        return available_chain, scenario
 
 
 # -----------------------------------------------------------------------------
-# Context-aware conversation building ------------------------------------------
+# Scenario-aware conversation building -----------------------------------------
 # -----------------------------------------------------------------------------
 
-class ContextAwareBuilder:
-    """Builds natural conversation with context awareness."""
+class ScenarioAwareBuilder:
+    """Builds conversations according to specific scenarios."""
     
     def __init__(self, registry: ToolRegistry, bank: EnhancedSingleRoundBank):
         self.registry = registry
         self.bank = bank
         
-    def build_conversation(self, planned_chain: List[str]) -> Dict[str, Any]:
-        """Build a multi-round conversation from planned chain."""
+    def build_conversation(self, planned_chain: List[str], scenario: ConversationScenario) -> Dict[str, Any]:
+        """Build a conversation for a specific scenario."""
         if not planned_chain:
             return {}
             
-        # Initialize conversation state
-        state = ConvState(session_id=str(uuid.uuid4()))
+        # Initialize conversation state with scenario
+        state = ConvState(session_id=str(uuid.uuid4()), scenario=scenario)
         conversations = []
         
         # Get base image from first tool
@@ -419,7 +409,15 @@ class ContextAwareBuilder:
             
         state.base_image_id = first_example.image_id
         state.base_image_path = first_example.image_path
-        state.all_image_paths.append(first_example.image_path)  # NEW: add to list
+        self._add_image_to_state(state, first_example.image_path)
+        
+        # Handle scenario-specific initialization
+        if scenario == ConversationScenario.REGISTRATION_FROM_START:
+            # Add second image immediately for registration
+            second_image = self.bank.extractor.get_different_image(state.all_image_paths)
+            if second_image:
+                self._add_image_to_state(state, second_image)
+                state.has_second_image = True
         
         # Build each conversation turn
         for i, tool_name in enumerate(planned_chain):
@@ -428,25 +426,63 @@ class ContextAwareBuilder:
                 conversations.extend(turn)
                 state.tool_history.append(tool_name)
         
-        # Prepare final output with proper image format
-        image_field = state.all_image_paths if len(state.all_image_paths) > 1 else state.base_image_path
+        # Final validation
+        if not self._validate_conversation(conversations, state):
+            print(f"Warning: {scenario.value} conversation failed validation, skipping...")
+            return {}
+        
+        # Prepare output
+        if len(state.all_image_paths) > 1:
+            image_field = state.all_image_paths
+        else:
+            image_field = state.all_image_paths[0] if state.all_image_paths else state.base_image_path
         
         return {
             "session_id": state.session_id,
             "image_id": state.base_image_id,
-            "image": image_field,  # List if multiple images, string if single
-            "file_name": state.base_image_path,  # Always the primary image
+            "image": image_field,
+            "file_name": state.base_image_path,
             "conversations": conversations
         }
     
+    def _add_image_to_state(self, state: ConvState, image_path: Any) -> None:
+        """Add image paths to state, ensuring no duplicates or nesting."""
+        if isinstance(image_path, list):
+            for img in image_path:
+                if isinstance(img, str) and img and img not in state.all_image_paths:
+                    state.all_image_paths.append(img)
+        elif isinstance(image_path, str) and image_path and image_path not in state.all_image_paths:
+            state.all_image_paths.append(image_path)
+    
+    def _validate_conversation(self, conversations: List[Dict[str, Any]], state: ConvState) -> bool:
+        """Validate that conversation follows scenario requirements."""
+        # Count image tags
+        total_tags = 0
+        for conv in conversations:
+            if conv.get("from") == "human" and "<image>" in conv.get("value", ""):
+                total_tags += conv["value"].count("<image>")
+        
+        expected_images = len(state.all_image_paths)
+        
+        if total_tags != expected_images:
+            print(f"Tag/image mismatch: {total_tags} tags vs {expected_images} images")
+            return False
+        
+        # Scenario-specific validation
+        if state.scenario == ConversationScenario.REGISTRATION_FROM_START and expected_images < 2:
+            print("Registration from start scenario needs 2+ images")
+            return False
+            
+        return True
+    
     def _build_turn(self, tool_name: str, state: ConvState, turn_idx: int, chain: List[str]) -> List[Dict[str, Any]]:
-        """Build a single conversation turn (user request + assistant response + tool output + final response)."""
+        """Build a single conversation turn based on scenario."""
         example = self.bank.get_example(tool_name)
         if not example:
             return []
             
-        # Adapt user prompt for context
-        user_prompt = self._adapt_user_prompt(example, state, turn_idx, chain, tool_name)
+        # Adapt user prompt based on scenario
+        user_prompt = self._adapt_user_prompt_for_scenario(example, state, turn_idx, chain, tool_name)
         
         # Create assistant tool call
         assistant_call = self._create_assistant_call(example, state)
@@ -457,7 +493,7 @@ class ContextAwareBuilder:
         # Create final response
         final_response = self._create_final_response(example, state)
         
-        # Update state with artifacts
+        # Update state
         self._update_state_with_artifacts(state, tool_name, example)
         
         return [
@@ -467,76 +503,76 @@ class ContextAwareBuilder:
             final_response
         ]
     
-    def _adapt_user_prompt(self, example: ToolExample, state: ConvState, turn_idx: int, chain: List[str], tool_name: str) -> str:
-        """Adapt user prompt for conversation context."""
-        if turn_idx == 0:
-            # First turn - handle special cases
-            if tool_name == "UniGradICON":
-                # Registration needs two images
-                second_image_path = f"{state.base_image_path}"
-                state.all_image_paths.append(second_image_path)
-                state.has_second_image = True
-                return f"<image>\n<image>\n{example.input_prompt}"
-            elif tool_name == "CellSAM":
-                # WSI analysis - special handling
-                return f"<image>\n{example.input_prompt} (analyzing whole slide image)"
+    def _adapt_user_prompt_for_scenario(self, example: ToolExample, state: ConvState, turn_idx: int, chain: List[str], tool_name: str) -> str:
+        """Adapt user prompt based on specific scenario requirements."""
+        clean_prompt = example.input_prompt.strip()
+        
+        # Scenario 1: Single Image Throughout
+        if state.scenario == ConversationScenario.SINGLE_IMAGE:
+            if turn_idx == 0:
+                return f"<image>\n{clean_prompt}"
             else:
-                # Normal single image
-                if state.base_image_path:
-                    return f"<image>\n{example.input_prompt}"
+                return self._create_followup_prompt(clean_prompt)
+        
+        # Scenario 2: Registration with Two Images from Start
+        elif state.scenario == ConversationScenario.REGISTRATION_FROM_START:
+            if turn_idx == 0:
+                if tool_name == "UniGradICON":
+                    return f"<image>\n<image>\n{clean_prompt}"
                 else:
-                    return example.input_prompt
-        else:
-            # Later turns - decide scenario
-            if tool_name == "UniGradICON" and not state.has_second_image:
-                # Registration in later turn - introduce second image
-                state.has_second_image = True
-                # Add second image path (simulate or use from example)
-                second_image_path = f"{state.base_image_path}"
-                state.all_image_paths.append(second_image_path)
-                context_phrases = [
-                    f"Now I have a second image. <image>\n{example.input_prompt}",
-                    f"Here's an additional image for registration. <image>\n{example.input_prompt}",
-                    f"I want to register this new image <image> with the previous one. {example.input_prompt}"
-                ]
-                return random.choice(context_phrases)
-            elif tool_name == "CellSAM" and "CellViT" in [t.lower() for t in state.tool_history]:
-                # Transition from regular cell seg to WSI
-                context_phrases = [
-                    f"Now let me analyze the whole slide image version. <image>\n{example.input_prompt}",
-                    f"I want to extend this to WSI analysis. <image>\n{example.input_prompt}",
-                    f"Let's look at the complete slide. <image>\n{example.input_prompt}"
-                ]
-                return random.choice(context_phrases)
-            elif turn_idx >= 2 and random.random() < 0.3:
-                # Introduce completely new image
-                new_image_path = example.image_path  # Use example's image as new image
-                if new_image_path not in state.all_image_paths:
-                    state.all_image_paths.append(new_image_path)
-                    context_phrases = [
-                        f"Now I have a different image to analyze. <image>\n{example.input_prompt}",
-                        f"Let me switch to this new image. <image>\n{example.input_prompt}",
-                        f"Here's another image I'd like you to examine. <image>\n{example.input_prompt}",
-                        f"I want to analyze this different image now. <image>\n{example.input_prompt}"
-                    ]
-                    return random.choice(context_phrases)
+                    # Non-registration tool but in registration scenario
+                    return f"<image>\n<image>\n{clean_prompt}"
+            else:
+                return self._create_followup_prompt(clean_prompt)
+        
+        # Scenario 3: Registration - Add Second Image Later
+        elif state.scenario == ConversationScenario.REGISTRATION_ADD_LATER:
+            if turn_idx == 0:
+                return f"<image>\n{clean_prompt}"
+            elif tool_name == "UniGradICON" and not state.has_second_image:
+                # This is where we add the second image
+                second_image = self.bank.extractor.get_different_image(state.all_image_paths)
+                if second_image:
+                    self._add_image_to_state(state, second_image)
+                    state.has_second_image = True
+                    state.second_image_added_at_turn = turn_idx
+                    return f"Now I have a second image. <image>\nRegister this new scan with the previous one."
                 else:
-                    # Fall back to normal context if image already exists
-                    pass
-            
-            # Normal follow-up (same image continuation)
-            context_phrases = [
-                f"Now, {example.input_prompt.lower()}",
-                f"Following up on the previous analysis, {example.input_prompt.lower()}",
-                f"Next, {example.input_prompt.lower()}",
-                f"Building on the results so far, {example.input_prompt.lower()}",
-                f"Using the previous output, {example.input_prompt.lower()}"
-            ]
-            return random.choice(context_phrases)
+                    return self._create_followup_prompt(clean_prompt)
+            else:
+                return self._create_followup_prompt(clean_prompt)
+        
+        # Scenario 4: Switch to Different Image Mid-Conversation
+        elif state.scenario == ConversationScenario.SWITCH_IMAGE_MID:
+            if turn_idx == 0:
+                return f"<image>\n{clean_prompt}"
+            elif turn_idx == 2 and state.image_switch_turn == -1:  # Switch at turn 2
+                different_image = self.bank.extractor.get_different_image(state.all_image_paths)
+                if different_image:
+                    self._add_image_to_state(state, different_image)
+                    state.image_switch_turn = turn_idx
+                    return f"Now I have a different image to analyze. <image>\n{clean_prompt}"
+                else:
+                    return self._create_followup_prompt(clean_prompt)
+            else:
+                return self._create_followup_prompt(clean_prompt)
+        
+        # Fallback
+        return f"<image>\n{clean_prompt}" if turn_idx == 0 else self._create_followup_prompt(clean_prompt)
+    
+    def _create_followup_prompt(self, clean_prompt: str) -> str:
+        """Create follow-up prompt without new image tags."""
+        followup_phrases = [
+            f"Now, {clean_prompt.lower()}",
+            f"Following up on the previous analysis, {clean_prompt.lower()}",
+            f"Next, {clean_prompt.lower()}",
+            f"Building on the results so far, {clean_prompt.lower()}",
+            f"Using the previous output, {clean_prompt.lower()}"
+        ]
+        return random.choice(followup_phrases)
     
     def _create_assistant_call(self, example: ToolExample, state: ConvState) -> Dict[str, Any]:
         """Create assistant tool call response."""
-        # Adapt thoughts for context
         thoughts = example.thoughts
         if state.tool_history:
             thoughts = f"Building on the previous {', '.join(state.tool_history)} results. {thoughts}"
@@ -559,7 +595,7 @@ class ContextAwareBuilder:
         """Create final assistant response."""
         thoughts = f"Based on the {example.tool_name} output, I can now provide a comprehensive answer."
         if state.conversation_context:
-            thoughts += f" This builds on our previous analysis: {'; '.join(state.conversation_context[-2:])}"
+            thoughts += f" This builds on our previous analysis."
             
         return {
             "from": "gpt", 
@@ -570,7 +606,6 @@ class ContextAwareBuilder:
     
     def _update_state_with_artifacts(self, state: ConvState, tool_name: str, example: ToolExample) -> None:
         """Update conversation state with new artifacts."""
-        # Create artifact based on tool type
         artifact_id = f"{tool_name.lower()}_{len(state.artifacts):03d}"
         
         artifact_types = {
@@ -587,13 +622,13 @@ class ContextAwareBuilder:
             "DSMIL": "tumor_detection",
             "CellViT": "cell_segmentation",
             "CellSAM": "wsi_segmentation",
-            "LLaVA-Med": "medical_vqa_response",      # Medical VQA response
-            "BiomedClip": "medical_classification",   # Medical image classification
-            "grounding dino": "object_grounding",     # Grounded object detection
-            "MedSAM": "medical_segmentation",         # Medical segmentation mask
-            "grounding dino + MedSAM": "grounded_segmentation",         # Combined grounding + segmentation
-            "ChatCAD-G": "medical_report",              # Medical report
-            "ChatCAD-R": "rag_medical_response",       # RAG-enhanced medical response
+            "LLaVA-Med": "medical_vqa_response",
+            "BiomedClip": "medical_classification",
+            "grounding dino": "object_grounding",
+            "MedSAM": "medical_segmentation",
+            "grounding dino + MedSAM": "grounded_segmentation",
+            "ChatCAD-G": "medical_report",
+            "ChatCAD-R": "rag_medical_response",
         }
         
         artifact_type = artifact_types.get(tool_name, "output")
@@ -617,18 +652,22 @@ def build_enhanced_conversation(
     registry: ToolRegistry,
     bank: EnhancedSingleRoundBank
 ) -> Dict[str, Any]:
-    """Build a single enhanced conversation with real data and diversity."""
-    planner = DiversityPlanner(registry, bank)
-    builder = ContextAwareBuilder(registry, bank)
+    """Build a single enhanced conversation with scenario awareness."""
+    planner = ScenarioPlanner(registry, bank)
+    builder = ScenarioAwareBuilder(registry, bank)
     
-    # Plan conversation
-    chain = planner.plan_conversation()
+    # Plan conversation with scenario
+    chain, scenario = planner.plan_conversation()
     if not chain:
         return {}
         
-    # Build conversation
-    conversation = builder.build_conversation(chain)
-    return conversation
+    # Build conversation for scenario
+    try:
+        conversation = builder.build_conversation(chain, scenario)
+        return conversation
+    except Exception as e:
+        print(f"Error building {scenario.value} conversation: {e}")
+        return {}
 
 
 # -----------------------------------------------------------------------------
@@ -636,7 +675,7 @@ def build_enhanced_conversation(
 # -----------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate multi-round Qwen-style dialogue datasets")
+    parser = argparse.ArgumentParser(description="Generate scenario-based multi-round dialogues")
     parser.add_argument("--tool_yaml", type=str, required=True, help="Path to tool metadata YAML")
     parser.add_argument("--single_round_dir", type=str, required=True, help="Path to single-round examples directory")
     parser.add_argument("--out", type=str, required=True, help="Output file path")
@@ -646,22 +685,93 @@ def main():
     registry = ToolRegistry(args.tool_yaml)
     bank = EnhancedSingleRoundBank(args.single_round_dir)
 
+    # Check available examples for each tool
+    print("Loading tool examples...")
+    total_examples = 0
     for tool in registry.tools:
         exs = bank.extractor.load_tool_examples(tool)
         print(f"{tool}: loaded {len(exs)} examples")
-
+        total_examples += len(exs)
+    
+    print(f"Total examples loaded: {total_examples}")
+    print(f"Image pool size: {len(bank.extractor._image_pool)}")
 
     conversations = []
-    for _ in range(args.num):
+    scenario_counts = {scenario: 0 for scenario in ConversationScenario}
+    successful = 0
+    skipped = 0
+    
+    print(f"Generating {args.num} conversations across all scenarios...")
+    
+    for i in range(args.num):
+        if i % 100 == 0 and i > 0:
+            print(f"Progress: {i}/{args.num} | Success: {successful} | Skipped: {skipped}")
+            for scenario, count in scenario_counts.items():
+                print(f"  {scenario.value}: {count}")
+            
         conversation = build_enhanced_conversation(registry, bank)
-        if conversation:
+        if conversation and conversation.get("conversations"):
             conversations.append(conversation)
+            successful += 1
+            
+            # Track scenario distribution
+            # Infer scenario from conversation structure
+            scenario = infer_scenario_from_conversation(conversation)
+            scenario_counts[scenario] += 1
+        else:
+            skipped += 1
+            
+        # Early warning if skip rate is too high
+        if i > 200 and skipped > successful:
+            print(f"Warning: High skip rate detected. Consider checking data availability.")
 
-    with open(args.out, "w") as f:
+    print(f"\nFinal Results:")
+    print(f"Generated: {len(conversations)} valid conversations")
+    print(f"Success rate: {len(conversations)/args.num*100:.1f}%")
+    print(f"Total skipped: {skipped}")
+    
+    print(f"\nScenario Distribution:")
+    for scenario, count in scenario_counts.items():
+        percentage = (count / len(conversations) * 100) if conversations else 0
+        print(f"  {scenario.value}: {count} ({percentage:.1f}%)")
+
+    # Write output
+    with open(args.out, "w", encoding='utf-8') as f:
         for conversation in conversations:
-            f.write(json.dumps(conversation) + "\n")
+            f.write(json.dumps(conversation, ensure_ascii=False) + "\n")
 
-    print(f"Generated {len(conversations)} conversations and saved to {args.out}")
+    print(f"\nSaved {len(conversations)} conversations to {args.out}")
+
+
+def infer_scenario_from_conversation(conversation: Dict[str, Any]) -> ConversationScenario:
+    """Infer the scenario type from the conversation structure."""
+    image_field = conversation.get("image")
+    conversations = conversation.get("conversations", [])
+    
+    # Count image tags across all turns
+    image_tag_pattern = []
+    for conv in conversations:
+        if conv.get("from") == "human":
+            tag_count = conv.get("value", "").count("<image>")
+            if tag_count > 0:
+                image_tag_pattern.append(tag_count)
+    
+    # Determine scenario based on patterns
+    if isinstance(image_field, list) and len(image_field) >= 2:
+        if len(image_tag_pattern) >= 1 and image_tag_pattern[0] >= 2:
+            return ConversationScenario.REGISTRATION_FROM_START
+        elif len(image_tag_pattern) >= 2 and any(tags > 0 for tags in image_tag_pattern[1:]):
+            # Check if second image was added later
+            for i, conv in enumerate(conversations):
+                if conv.get("from") == "human" and i > 0:
+                    value = conv.get("value", "")
+                    if ("second image" in value.lower() or "new image" in value.lower()) and "<image>" in value:
+                        return ConversationScenario.REGISTRATION_ADD_LATER
+                    elif ("different image" in value.lower() or "switch" in value.lower()) and "<image>" in value:
+                        return ConversationScenario.SWITCH_IMAGE_MID
+    
+    # Default to single image scenario
+    return ConversationScenario.SINGLE_IMAGE
 
 
 if __name__ == "__main__":
