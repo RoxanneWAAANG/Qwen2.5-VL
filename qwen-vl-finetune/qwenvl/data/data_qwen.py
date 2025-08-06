@@ -44,9 +44,43 @@ def rank0_print(*args):
         print(*args)
 
 
+# def read_jsonl(path):
+#     try:
+#         with open(path, "r") as f:
+#             return [json.loads(line) for line in f]
+#     except Exception as e:
+#         with open(path, 'rb') as f:
+#             first_line_bytes = f.readline()
+#             print("Hex representation:", first_line_bytes.hex())
+#             print("First 20 characters:", first_line_bytes[:20])
+#         raise ValueError(f"Failed to read JSONL file {path}: {e}")
+
 def read_jsonl(path):
-    with open(path, "r") as f:
-        return [json.loads(line) for line in f]
+    result = []
+    with open(path, "r", encoding='utf-8') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+                result.append(parsed)
+            except json.JSONDecodeError as e:
+                print(f"JSON error on line {line_num}:")
+                print(f"Error: {e}")
+                print(f"Raw line bytes: {line.encode('utf-8')}")
+                print(f"Character at error position {e.pos}: {repr(line[e.pos])}")
+                
+                # Check the previous few lines in the file to see context
+                with open(path, 'r', encoding='utf-8') as f2:
+                    lines = f2.readlines()
+                    start_idx = max(0, line_num - 5)
+                    end_idx = min(len(lines), line_num + 3)
+                    for i in range(start_idx, end_idx):
+                        marker = ">>>" if i == line_num - 1 else "   "
+                        print(f"{marker} Line {i+1}: {repr(lines[i][:100])}")
+                raise
+    return result
 
 def reorganize_source_for_tool_use(source: List[Dict]) -> List[Dict]:
     """
@@ -71,9 +105,9 @@ def reorganize_source_for_tool_use(source: List[Dict]) -> List[Dict]:
         conv.pop("actions", None)
         conv["value"] = merged
         new_source.append(conv)
-        print('\n-------------')
-        print(new_source)
-        print('-------------\n')
+        # print('\n-------------')
+        # print(new_source)
+        # print('-------------\n')
 
     return new_source
 
@@ -363,12 +397,19 @@ class LazySupervisedDataset(Dataset):
         # try the current sample first
         for attempt_idx in range(num_base_retries):
             try:
+                sources = self.list_data_dict[i]
                 sample = self._get_item(i)
                 return sample
             except Exception as e:
                 # sleep 1s in case it is a cloud disk issue
-                print(f"[Try #{attempt_idx}] Failed to fetch sample {i}. Exception:", e)
+                print(f"[Try #{attempt_idx}] Failed to fetch sample {i}. Exception:", e) 
                 time.sleep(1)
+                if "'NoneType' object is not subscriptable" in str(e):
+                    print(f"NoneType error at index {i}")
+                    print(f"sources: {sources}")
+                    print(f"sources[0]: {sources[0] if sources else 'N/A'}")
+                    # Add more debug info for the specific variables that might be None
+                raise e
 
         # try other samples, in case it is file corruption issue
         for attempt_idx in range(num_base_retries):
