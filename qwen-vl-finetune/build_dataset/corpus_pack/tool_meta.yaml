@@ -18,6 +18,7 @@ HealthGPT:
   - Process finished without errors.
   - Medical evaluation done. Review at your leisure.
   - Task completed as specified.
+
 IterNet:
   modality: medical scan
   refine_task: fundus image segmentation
@@ -38,6 +39,7 @@ IterNet:
   - Process finished without errors.
   - Multi-step evaluation done. Review at your leisure.
   - Task completed as specified.
+
 LLaVA:
   modality: vision-language image
   refine_task: text summarization
@@ -58,6 +60,7 @@ LLaVA:
   - Process finished without errors.
   - Image analysis done. Review at your leisure.
   - Task completed as specified.
+
 LLaVA-Rad:
   modality: radiological image
   refine_task: refine the radiological report generation
@@ -78,6 +81,7 @@ LLaVA-Rad:
   - Process finished without errors.
   - Radiological evaluation done. Review at your leisure.
   - Task completed as specified.
+
 PMC-LLaMA:
   modality: medical text
   refine_task: question answering, rational generation
@@ -98,6 +102,7 @@ PMC-LLaMA:
   - Process finished without errors.
   - Medical literature evaluation done. Review at your leisure.
   - Task completed as specified.
+
 RaTE-NER:
   modality: medical text
   refine_task: refine the named entity recognition
@@ -118,6 +123,7 @@ RaTE-NER:
   - Process finished without errors.
   - Medical entity extraction done. Review at your leisure.
   - Task completed as specified.
+
 SpecialistVLMs:
   modality: OCT report generaton
   refine_task: refine the OCT analysis
@@ -138,6 +144,7 @@ SpecialistVLMs:
   - Process finished without errors.
   - Specialist medical evaluation done. Review at your leisure.
   - Task completed as specified.
+
 UltraSAM:
   modality: ultrasound image
   refine_task: refine the ultrasound segmentation
@@ -158,6 +165,7 @@ UltraSAM:
   - Process finished without errors.
   - Ultrasound analysis done. Review at your leisure.
   - Task completed as specified.
+
 UniGradICON:
   modality: medical registration image
   refine_task: refine the image registration
@@ -178,6 +186,7 @@ UniGradICON:
   - Process finished without errors.
   - Medical image alignment done. Review at your leisure.
   - Task completed as specified.
+
 conch:
   modality: pathology image
   refine_task: visual question answering, tissue classification
@@ -262,4 +271,161 @@ cellsam:
   - Task executed successfully.
   - Process finished without errors.
   - Whole slide cellular analysis done. Review at your leisure.
+  - Task completed as specified.
+
+LLaVA-Med:
+  modality: multi-modal medical image
+  refine_task: medical visual question answering
+  default_args:
+    task: medical_vqa
+    modalities: ["MRI", "CT", "X-ray", "Histology", "Gross"]
+  refine_responses:
+  - Medical VQA analysis refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Medical visual question answering enhanced with improved clinical accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Medical VQA refinement finished -- please verify."
+  - "Clinical visual analysis improved, diagnostic insights enhanced."
+  success_responses:
+  - Medical visual question answering completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Medical VQA evaluation done. Review at your leisure.
+  - Task completed as specified.
+
+BiomedClip:
+  modality: biomedical image
+  refine_task: medical image classification
+  default_args:
+    task: classify_medical_image
+    modalities: ["MRI", "CT", "X-ray", "Histology", "Gross"]
+  refine_responses:
+  - Medical image classification refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Biomedical classification enhanced with improved diagnostic precision.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Medical classification refinement finished -- please verify."
+  - "Biomedical image analysis improved, classification accuracy enhanced."
+  success_responses:
+  - Medical image classification completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Biomedical classification done. Review at your leisure.
+  - Task completed as specified.
+
+grounding dino:
+  modality: medical image
+  refine_task: medical object grounding and detection
+  default_args:
+    task: ground_objects
+    modalities: ["MRI", "CT", "X-ray", "Histology"]
+  refine_responses:
+  - Medical object grounding refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Object detection grounding enhanced with improved localization accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Grounding refinement finished -- please verify."
+  - "Medical object detection improved, localization enhanced."
+  success_responses:
+  - Medical object grounding completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Object grounding analysis done. Review at your leisure.
+  - Task completed as specified.
+
+MedSAM:
+  modality: medical image
+  refine_task: medical image segmentation with bounding box prompts
+  default_args:
+    task: segment_with_bbox
+    modalities: ["MRI", "CT", "X-ray", "Histology", "Gross"]
+  refine_responses:
+  - Medical segmentation refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Medical segmentation enhanced with improved boundary precision.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Medical segmentation refinement finished -- please verify."
+  - "Medical image segmentation improved, anatomical boundaries enhanced."
+  success_responses:
+  - Medical image segmentation completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Medical segmentation analysis done. Review at your leisure.
+  - Task completed as specified.
+
+grounding dino + MedSAM:
+  modality: medical image
+  refine_task: grounded medical image segmentation with text prompts
+  default_args:
+    task: grounded_segmentation
+    modalities: ["MRI", "CT", "X-ray", "Histology"]
+    components: ["Grounding-DINO", "MedSAM"]
+  refine_responses:
+  - Grounded segmentation refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Text-prompted segmentation enhanced with improved grounding accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Grounded segmentation refinement finished -- please verify."
+  - "Text-guided medical segmentation improved, object localization enhanced."
+  success_responses:
+  - Grounded medical segmentation completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Text-prompted segmentation done. Review at your leisure.
+  - Task completed as specified.
+
+ChatCAD-G:
+  modality: X-ray image
+  refine_task: medical report generation
+  default_args:
+    task: generate_medical_report
+    data_source: "MIMIC-CXR"
+    modality: "X-ray"
+  refine_responses:
+  - Medical report generation refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Clinical report enhanced with improved diagnostic accuracy.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "Medical report refinement finished -- please verify."
+  - "Clinical documentation improved, diagnostic reporting enhanced."
+  success_responses:
+  - Medical report generation completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Clinical report generation done. Review at your leisure.
+  - Task completed as specified.
+
+ChatCAD-R:
+  modality: medical knowledge
+  refine_task: retrieval augmented medical question answering
+  default_args:
+    task: rag_medical_qa
+    knowledge_base: "Merck Manual"
+    retrieval_method: "augmented_generation"
+  refine_responses:
+  - RAG medical analysis refinement completed successfully.
+  - Refinement applied as instructed.
+  - "Output has been fine-tuned."
+  - Knowledge-augmented response enhanced with improved clinical evidence.
+  - Details enhanced according to request.
+  - Revision done; let me know if you need another pass.
+  - "RAG medical refinement finished -- please verify."
+  - "Evidence-based medical response improved, clinical knowledge enhanced."
+  success_responses:
+  - RAG medical question answering completed successfully.
+  - Task executed successfully.
+  - Process finished without errors.
+  - Knowledge-augmented medical analysis done. Review at your leisure.
   - Task completed as specified.
