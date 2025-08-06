@@ -44,18 +44,25 @@ datasets=single_tool_multi_round,multi_tool_multi_round #,multi_tool_single_roun
 # ----------------------------
 # Output config
 # ----------------------------
-run_name="qwen2vl-lora-baseline"
-output_dir=/data3/qwen-weights/output_7b/
+output_dir=/data3/qwen-weights/output_7b
 logging_dir="${output_dir}/tensorboard_logs"
+run_name="qwen2vl-lora-baseline"
+
+# --------  (Re)start policy --------------------------------------------------
+# We want a clean run, so wipe any stray checkpoints.
+rm -rf "${output_dir}"/checkpoint-*       # comment-out if you plan to resume
+
+resume_flag=False                         # ← we are NOT resuming
+
 
 # ----------------------------
 # Calculate dynamic save steps
 # ----------------------------
 # Save every ~10% of total steps
 total_samples=212449
-effective_batch_size=$((${NPROC_PER_NODE} * ${batch_size} * ${grad_accum_steps}))
-total_steps=$((${total_samples} / ${effective_batch_size}))
-save_steps=$((${total_steps} / 4))
+effective_bs=$(( NPROC_PER_NODE * batch_size * grad_accum_steps ))   # 2*1*128 = 256
+total_steps=$(( total_samples / effective_bs ))                      # 830
+save_steps=$(( total_steps / 4 ))                                    # 207
 
 # Training arguments
 args="
@@ -86,13 +93,12 @@ args="
     --lr_scheduler_type cosine \
     --logging_steps 10 \
     --model_max_length 20607 \
-    --gradient_checkpointing True \
-    --dataloader_num_workers 2 \
+    --gradient_checkpointing False \
     --remove_unused_columns False \
     --run_name ${run_name} \
     --seed 42 \
     --data_seed 42 \
-    --resume_from_checkpoint True \
+    --resume_from_checkpoint ${resume_flag} \
     "
 
 # Launch training
