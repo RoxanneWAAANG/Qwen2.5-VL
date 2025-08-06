@@ -7,7 +7,7 @@ SINGLE_TOOL_MULTIROUND = {
 }
 
 MULTI_TOOL_MULTIROUND = {
-    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/multi_round/multi_tool_multiround_new.jsonl",
+    "annotation_path": "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/multi_round/multi_tool_multiround.jsonl",
     "data_path": "",
 }
 
