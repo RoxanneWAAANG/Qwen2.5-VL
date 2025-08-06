@@ -22,11 +22,20 @@ def load_jsonl(path: str) -> List[Dict[str, Any]]:
     with open(path, 'r', encoding='utf-8') as f:
         return [json.loads(line) for line in f if line.strip()]
 
+# def dump_jsonl(data: Sequence[Dict[str, Any]], path: str) -> None:
+#     """Save list of dictionaries to JSONL file"""
+#     with open(path, 'w', encoding='utf-8') as f:
+#         for row in data:
+#             f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
 def dump_jsonl(data: Sequence[Dict[str, Any]], path: str) -> None:
-    """Save list of dictionaries to JSONL file"""
     with open(path, 'w', encoding='utf-8') as f:
         for row in data:
-            f.write(json.dumps(row, ensure_ascii=False) + '\n')
+            # Quick fix: ensure the JSON string doesn't contain literal newlines
+            json_str = json.dumps(row, ensure_ascii=False)
+            # Replace any literal newlines that somehow got through
+            json_str = json_str.replace('\n', '\\n').replace('\r', '\\r')
+            f.write(json_str + '\n')
 
 def load_lines(path: str) -> List[str]:
     """Load text file into list of lines"""
@@ -165,18 +174,18 @@ def main():
             print(f"  Loading: {file_path}")
             data = load_jsonl(file_path)
             single_rounds.extend(data)
-            print(f"    Loaded {len(data)} conversations")
+            # print(f"    Loaded {len(data)} conversations")
     
     print(f"Total loaded: {len(single_rounds)} single-round conversations")
     
     # Load greetings and phrase banks
-    print("Loading greetings and phrase banks...")
+    # print("Loading greetings and phrase banks...")
 
     greetings = load_lines(args.greetings)
-    print(f"Loaded {len(greetings)} greetings")
+    # print(f"Loaded {len(greetings)} greetings")
     
     banks = load_banks(args.banks)
-    print(f"Loaded phrase banks with keys: {list(banks.keys())}")
+    # print(f"Loaded phrase banks with keys: {list(banks.keys())}")
     
     # Generate multi-round sessions
     print("Generating multi-round sessions...")
@@ -185,8 +194,8 @@ def main():
     closing_count = 0
     
     for i, example in enumerate(single_rounds):
-        if i % 1000 == 0 and i > 0:
-            print(f"  Processed {i}/{len(single_rounds)} conversations...")
+        # if i % 1000 == 0 and i > 0:
+            # print(f"  Processed {i}/{len(single_rounds)} conversations...")
             
         session = build_session(example, greetings, banks)
         sessions.append(session)
