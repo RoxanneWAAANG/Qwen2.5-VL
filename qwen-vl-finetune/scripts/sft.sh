@@ -50,10 +50,9 @@ run_name="qwen2vl-lora-baseline"
 
 # --------  (Re)start policy --------------------------------------------------
 # We want a clean run, so wipe any stray checkpoints.
-rm -rf "${output_dir}"/checkpoint-*       # comment-out if you plan to resume
+rm -rf "${output_dir}"/checkpoint-*
 
-resume_flag=False                         # ← we are NOT resuming
-
+resume_flag=False
 
 # ----------------------------
 # Calculate dynamic save steps
@@ -93,7 +92,7 @@ args="
     --lr_scheduler_type cosine \
     --logging_steps 10 \
     --model_max_length 20607 \
-    --gradient_checkpointing False \
+    --gradient_checkpointing True \
     --remove_unused_columns False \
     --run_name ${run_name} \
     --seed 42 \
