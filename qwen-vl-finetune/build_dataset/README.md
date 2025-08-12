@@ -2,11 +2,9 @@
 
 ## Overview
 
-Three levels of complexity:
-
-1. **Single-Round**: Basic tool usage (foundation datasets)
-2. **One-Tool Multi-Round**: Iterative refinement with same tool
-3. **Multi-Tool Multi-Round**: Complex workflows across different tools
+1. **Single-Tool Multi-Round**: Basic tool usage (foundation datasets)
+2. **Multi-Tool Multi-Round**: Complex workflows across different tools
+3. **Multi-Tool Single-Round**: Reasoning inside one round.
 
 ## Single-Round Dialogue
 
@@ -47,7 +45,7 @@ User Request → Assistant Tool Call → Tool Output → Assistant Final Respons
 }
 ```
 
-## One-Tool Multi-Round Dialogue
+## Single-Tool Multi-Round Dialogue
 
 ### Structure
 ```
@@ -101,7 +99,7 @@ Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assi
 ```
 
 #### Scenario B: Progressive Enhancement
-**Use Case**: User builds complexity gradually
+**Use Case**: Add daily dialogue for diversity.
 
 ```json
 {
@@ -128,9 +126,7 @@ Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assi
       "actions": [],
       "value": "The lung segmentation has been completed successfully."
     }
-    {"from": "human", "value": "Now generate a clinical report format"},
-    {"from": "gpt", "value": "Formal clinical report..."},
-    {"from": "human", "value": "No, that's all -- thanks!"},
+    {"from": "human", "value": "That's all -- thanks!"},
   {"from": "gpt", "thoughts": "…", "actions": [], "value": "Glad to help -- take care!"}]}
   ]
 }
@@ -159,6 +155,10 @@ Image Enhancement → Analysis → Specialist Review → Entity Extraction → D
 ```
 Image A Analysis → Image B Analysis → Registration → Comparison Report → Clinical Summary
 ```
+
+## Multi-Tool Single-Round Dialogue
+
+
 
 ## Image Handling Scenarios
 
@@ -273,23 +273,6 @@ Turn 5: Compare findings
 ```
 
 ## Implementation Guidelines
-
-### Tool Chain Design Principles
-
-#### Logical Workflow Chains
-```python
-workflow_chains = {
-    "UniGradICON": ["UltraSAM", "LLaVA-Rad", "HealthGPT"],  # Registration → Analysis
-    "UltraSAM": ["LLaVA-Rad", "SpecialistVLMs"],           # Segmentation → Report  
-    "HealthGPT": ["LLaVA-Rad", "UltraSAM"],                # Enhancement → Analysis
-    "IterNet": ["SpecialistVLMs", "LLaVA-Rad"],            # Fundus → Specialist
-    "LLaVA-Rad": ["LLaVA", "PMC-LLaMA"],                   # Report → Summary/QA
-    "LLaVA": ["RaTE-NER", "PMC-LLaMA"],                    # Summary → NER/QA
-    "RaTE-NER": ["PMC-LLaMA"],                             # NER → QA
-    "PMC-LLaMA": ["LLaVA"],                                # QA → Summary
-    "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"]               # Specialist → Summary/QA
-}
-```
 
 ### Image Management Rules
 
