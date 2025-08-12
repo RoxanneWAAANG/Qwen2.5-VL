@@ -2,8 +2,6 @@
 
 ## Dataset Source
 
-**Basic Dialogue**
-
 | Dataset                         | Samples |
 |---------------------------------|--------:|
 | BiomedClip                      | 8,804   |
