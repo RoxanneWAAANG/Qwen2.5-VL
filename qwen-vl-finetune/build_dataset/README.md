@@ -1,5 +1,35 @@
 # Instruction Dataset Building
 
+## Dataset Source
+
+**Basic Dialogue**
+
+| Dataset                         | Samples |
+|---------------------------------|--------:|
+| BiomedClip                      | 8,804   |
+| CellSAM                         | 2,000   |
+| CellViT                         | 2,000   |
+| ChatCAD-G                       | 4,980   |
+| ChatCAD-R                       | 2,814   |
+| CONCH                           | 4,000   |
+| DSMIL                           | 2,000   |
+| Grounding Dino + MedSAM         | 1,999   |
+| Grounding Dino                  | 4,759   |
+| HealthGPT -- Reconstruction     | 5,000   |
+| HealthGPT -- Super Resolution   | 5,000   |
+| InterNet                        | 5,000   |
+| LLaVA-Rad                       | 5,000   |
+| LLaVA                           | 5,000   |
+| LLaVA-Med                       | 17,687  |
+| MedSAM                          | 6,406   |
+| PMC-LLaMA                       | 10,000  |
+| RaTE-NER                        | 5,000   |
+| SpecialistVLMs                  | 5,000   |
+| UltraSAM                        | 5,000   |
+| UniGradICON                     | 5,000   |
+| Multi-Tool Multi-Round          | 100,000 |
+| **Total**                       | **212,449** |
+
 ## Overview
 
 1. **Single-Tool Multi-Round**: Basic tool usage (foundation datasets)
