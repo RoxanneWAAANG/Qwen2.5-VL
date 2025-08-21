@@ -1,40 +1,82 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Generate multi-tool single-round conversations
-Format: User request → Assistant uses multiple tools → Tool outputs → Final response
+multi_tool_single_round.py
 
+Generate single-round conversations where the assistant plans and calls multiple tools
+(2–3 steps), then answers based on the tool outputs.
+
+Format (4 turns total):
+  1) human:   <image> tags + user request (possibly two images for registration)
+  2) gpt:     plan with Thoughts + Actions (API_name/API_params) + Value (brief plan text)
+  3) human:   concatenated tool outputs + "Answer my first request: <original prompt>"
+  4) gpt:     final answer (no further tool calls)
+
+Example:
 python3 multi_tool_single_round.py \
---tool_yaml corpus_pack/tool_meta.yaml \
---single_round_dir tool_instruct \
---out multi_round/multi_tool_single_round.jsonl \
---num 20000
+  --tool_yaml corpus_pack/tool_meta.yaml \
+  --single_round_dir tool_instruct \
+  --out multi_round/multi_tool_single_round.jsonl \
+  --num 40000
 """
 
+from __future__ import annotations
 import argparse
 import json
 import random
-import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-
+from typing import Any, Dict, List, Optional, Union
 import yaml
 
-# -----------------------------------------------------------------------------
-# Tool metadata and data extraction
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# Canonical tool names & built‑in capabilities
+# ──────────────────────────────────────────────────────────────────────────────
+
+def canonical_tool_name(name: str) -> str:
+    """Normalize tool aliases to a canonical display name."""
+    n = (name or "").strip()
+    key = n.lower()
+    aliases = {
+        "conch": "CONCH",
+        "dsmil": "DSMIL",
+        "cellvit": "CellViT",
+        "cellsam": "CellSAM",
+        "unigradicon": "UniGradICON",
+        "ultrasam": "UltraSAM",
+        "healthgpt": "HealthGPT",
+        "internet": "IterNet",
+        "llava-rad": "LLaVA-Rad",
+        "llava_med": "LLaVA-Med",
+        "llava-med": "LLaVA-Med",
+        "biomedclip": "BiomedClip",
+        "medsam": "MedSAM",
+        "grounding dino": "grounding dino",
+        "grounding dino + medsam": "grounding dino + MedSAM",
+        "chatcad-r": "ChatCAD-R",
+        "llava": "LLaVA",
+        "pmc-llama": "PMC-LLaMA",
+        "rate-ner": "RaTE-NER",
+        "specialistvlms": "SpecialistVLMs",
+    }
+    return aliases.get(key, n)
 
 @dataclass
 class Tool:
+    """Resolved tool config combining YAML + built‑in defaults."""
     name: str
     modality: str
     refine_task: str
     default_args: Dict[str, Any]
     refine_responses: List[str]
     success_responses: List[str]
+    modalities: List[str] = field(default_factory=list)
+    tasks: List[str] = field(default_factory=list)
+    requires_two_images: bool = False
+    image_optional: bool = False
 
     @classmethod
-    def from_dict(cls, name: str, cfg: Dict[str, Any]) -> "Tool":
+    def from_dict(cls, name: str, cfg: Dict[str, Any], builtin: Dict[str, Dict[str, Any]]) -> "Tool":
         return cls(
             name=name,
             modality=cfg.get("modality", ""),
@@ -42,22 +84,69 @@ class Tool:
             default_args=cfg.get("default_args", {}),
             refine_responses=cfg.get("refine_responses", []),
             success_responses=cfg.get("success_responses", []),
+            modalities=cfg.get("modalities") or builtin.get(name, {}).get("modalities", []),
+            tasks=cfg.get("tasks") or builtin.get(name, {}).get("tasks", []),
+            requires_two_images=cfg.get("requires_two_images", builtin.get(name, {}).get("requires_two_images", False)),
+            image_optional=cfg.get("image_optional", builtin.get(name, {}).get("image_optional", False)),
         )
 
+# Minimal built‑in capability map to keep routing robust even if YAML is sparse.
+BUILTIN_TOOL_CAPS: Dict[str, Dict[str, Any]] = {
+    "UltraSAM": {"modalities": ["US"], "tasks": ["segmentation"]},
+    "MedSAM": {"modalities": ["MRI", "CT", "X-ray", "Histology", "Gross"], "tasks": ["segmentation"]},
+    "IterNet": {"modalities": ["Retina-Fundus"], "tasks": ["segmentation"]},
+    "UniGradICON": {"modalities": ["CT", "MRI"], "tasks": ["registration"], "requires_two_images": True},
+    "HealthGPT": {"modalities": ["X-ray", "MRI", "CT", "US"], "tasks": ["reconstruction", "super_resolution"]},
+    "LLaVA-Rad": {"modalities": ["X-ray", "MRI", "CT", "US"], "tasks": ["report_generation"]},
+    "SpecialistVLMs": {"modalities": ["Retina-OCT"], "tasks": ["report_generation"]},
+    "BiomedClip": {"modalities": ["MRI", "CT", "X-ray", "Histology", "Gross"], "tasks": ["analysis", "classification"]},
+    "LLaVA-Med": {"modalities": ["MRI", "CT", "X-ray", "Histology", "Gross"], "tasks": ["vqa", "analysis"]},
+    "grounding dino": {"modalities": ["MRI", "CT", "X-ray", "Histology"], "tasks": ["grounding"]},
+    "grounding dino + MedSAM": {"modalities": ["MRI", "CT", "X-ray", "Histology"], "tasks": ["grounded_segmentation", "segmentation"]},
+    "LLaVA": {"modalities": [], "tasks": ["summarization"], "image_optional": True},
+    "PMC-LLaMA": {"modalities": [], "tasks": ["qa"], "image_optional": True},
+    "RaTE-NER": {"modalities": [], "tasks": ["entity_extraction"], "image_optional": True},
+    "ChatCAD-R": {"modalities": [], "tasks": ["documentation", "rag"], "image_optional": True},
+    # Pathology tools retained for registry compatibility only
+    "CONCH": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tissue_classification", "analysis"]},
+    "DSMIL": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tumor_detection", "analysis"]},
+    "CellViT": {"modalities": ["Cell-Microscopy"], "tasks": ["cell_segmentation", "analysis"]},
+    "CellSAM": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch", "Cell-Microscopy"], "tasks": ["wsi_segmentation", "cell_segmentation", "segmentation"]},
+}
+
 class ToolRegistry:
+    """Tool metadata registry loaded from YAML + backed by built‑ins."""
     def __init__(self, yaml_path: Union[str, Path]):
         with Path(yaml_path).open() as f:
             raw = yaml.safe_load(f)
-        self.tools: Dict[str, Tool] = {name: Tool.from_dict(name, cfg) for name, cfg in raw.items()}
+        self.tools: Dict[str, Tool] = {}
+        for raw_name, cfg in raw.items():
+            canon = canonical_tool_name(raw_name)
+            self.tools[canon] = Tool.from_dict(canon, cfg, BUILTIN_TOOL_CAPS)
 
     def __getitem__(self, name: str) -> Tool:
-        return self.tools[name]
+        return self.tools[canonical_tool_name(name)]
+
+    def has(self, name: str) -> bool:
+        return canonical_tool_name(name) in self.tools
+
+    def is_compatible(self, tool_name: str, modality: str) -> bool:
+        t = self[tool_name]
+        return (not t.modalities) or (modality in t.modalities)
+
+    def tools_for_task_and_modality(self, task: str, modality: str) -> List[str]:
+        return [name for name, t in self.tools.items()
+                if task in t.tasks and (not t.modalities or modality in t.modalities)]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Real data extractor (reads existing single‑tool instruction data)
+# ──────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class ToolExample:
     tool_name: str
     image_id: str
-    image_path: str
+    image_path: Union[str, List[str], None]
     input_prompt: str
     tool_params: Dict[str, Any]
     tool_output: str
@@ -65,6 +154,7 @@ class ToolExample:
     thoughts: str
 
 class RealDataExtractor:
+    """Pulls real per‑tool examples to seed params, outputs, and images."""
     def __init__(self, tool_instruct_dir: Union[str, Path]):
         self.tool_instruct_dir = Path(tool_instruct_dir)
         self.tool_mapping = {
@@ -76,874 +166,435 @@ class RealDataExtractor:
             "LLaVA": "llava_sum_dataset.jsonl",
             "RaTE-NER": "rate_ner_dataset.jsonl",
             "PMC-LLaMA": "pmc_llama_medqa_dataset.jsonl",
-            "SpecialistVLMs": "svlms_fundus_dataset.jsonl"
+            "SpecialistVLMs": "svlms_fundus_dataset.jsonl",
+            "CONCH": "CONCH.jsonl",
+            "DSMIL": "DSMIL.jsonl",
+            "CellViT": "CellViT.jsonl",
+            "CellSAM": "CellSAM.jsonl",
+            "LLaVA-Med": "LLaVA-Med.jsonl",
+            "BiomedClip": "BiomedClip.jsonl",
+            "grounding dino": "GD.jsonl",
+            "MedSAM": "MedSAM.jsonl",
+            "grounding dino + MedSAM": "GD_MedSAM.jsonl",
+            "ChatCAD-R": "ChatCAD-R.jsonl",
         }
         self._cache: Dict[str, List[ToolExample]] = {}
+        self._image_pool: List[str] = []
+        self._load_image_pool()
 
-    def load_tool_examples(self, tool_name: str, max_examples: int = 100) -> List[ToolExample]:
+    def _load_image_pool(self) -> None:
+        """Collect a flat pool of image paths from all tool files."""
+        try:
+            for tool_name in list(self.tool_mapping.keys()):
+                examples = self.load_tool_examples(tool_name, max_examples=10000)
+                for ex in examples:
+                    if isinstance(ex.image_path, list):
+                        for p in ex.image_path:
+                            if p and p not in self._image_pool:
+                                self._image_pool.append(p)
+                    else:
+                        if ex.image_path and ex.image_path not in self._image_pool:
+                            self._image_pool.append(ex.image_path)
+        except Exception as e:
+            print(f"Warning: Could not load image pool: {e}")
+
+    def get_different_image(self, exclude_paths: List[str]) -> Optional[str]:
+        """Return a random image path not in the exclude list (if available)."""
+        avail = [img for img in self._image_pool if img not in exclude_paths]
+        return random.choice(avail) if avail else None
+
+    def load_tool_examples(self, tool_name: str, max_examples: int = 100000) -> List[ToolExample]:
+        """Load examples for a tool from its JSONL file (cached)."""
+        tool_name = canonical_tool_name(tool_name)
         if tool_name in self._cache:
             return self._cache[tool_name]
-
         if tool_name not in self.tool_mapping:
+            self._cache[tool_name] = []
             return []
-
         dataset_file = self.tool_instruct_dir / self.tool_mapping[tool_name]
         if not dataset_file.exists():
+            self._cache[tool_name] = []
             return []
-
-        examples = []
-        with dataset_file.open() as f:
+        exs: List[ToolExample] = []
+        with dataset_file.open("r", encoding="utf-8") as f:
             for i, line in enumerate(f):
                 if i >= max_examples:
                     break
                 data = json.loads(line.strip())
-                example = self._parse_example(tool_name, data)
-                if example:
-                    examples.append(example)
+                ex = self._parse_example(tool_name, data)
+                if ex:
+                    exs.append(ex)
+        self._cache[tool_name] = exs
+        return exs
 
-        self._cache[tool_name] = examples
-        return examples
-
-    def _parse_example(self, tool_name: str, data: Dict[str, Any]) -> Optional[ToolExample]:
-
+    def _parse_example(self, expected_tool: str, data: Dict[str, Any]) -> Optional[ToolExample]:
+        """Parse a per‑tool single‑round example into a uniform structure."""
         conversations = data.get("conversations", [])
         if len(conversations) < 3:
             return None
-
-        # Check if this example is for the requested tool
         assistant_call = conversations[1]
         actions = assistant_call.get("actions", [])
         if not actions:
             return None
-
-        actual_tool_name = actions[0].get("API_name", "")
-        if actual_tool_name != tool_name:
+        actual_tool_name = canonical_tool_name(actions[0].get("API_name", ""))
+        if canonical_tool_name(expected_tool) != actual_tool_name:
             return None
 
-        user_prompt = conversations[0]["value"].replace("<image>\n", "").strip()
+        user_prompt = conversations[0]["value"].replace("<image>\n", "").replace("<image>", "").strip()
         thoughts = assistant_call.get("thoughts", "")
-        tool_params = actions[0]["API_params"] if actions else {}
-
+        tool_params = actions[0].get("API_params", {})
         tool_output_msg = conversations[2]["value"]
         tool_output = tool_output_msg.split("Answer my first request:")[0].strip()
-        if tool_output.startswith(f"{tool_name} output:"):
-            tool_output = tool_output[len(f"{tool_name} output:"):].strip()
-
+        prefix = f"{actual_tool_name} output:"
+        if tool_output.startswith(prefix):
+            tool_output = tool_output[len(prefix):].strip()
         assistant_response = conversations[3]["value"] if len(conversations) > 3 else ""
 
+        image_data = data.get("image") or data.get("images")
+        image_path: Union[str, List[str], None] = image_data if not isinstance(image_data, list) else image_data
+
         return ToolExample(
-            tool_name=tool_name,
-            image_id=data["image_id"],
-            image_path=data["file_name"],
+            tool_name=actual_tool_name,
+            image_id=data.get("image_id") or " ",
+            image_path=image_path,
             input_prompt=user_prompt,
-            tool_params=tool_params,
+            tool_params=tool_params or {},
             tool_output=tool_output,
             assistant_response=assistant_response,
-            thoughts=thoughts
+            thoughts=thoughts,
         )
 
     def get_random_example(self, tool_name: str) -> Optional[ToolExample]:
-        examples = self.load_tool_examples(tool_name)
-        return random.choice(examples) if examples else None
+        exs = self.load_tool_examples(tool_name)
+        return random.choice(exs) if exs else None
 
-# -----------------------------------------------------------------------------
-# Multi-tool combination logic
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# Tool router (task → tools) and simple planning helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
-class MultiToolPlanner:
-    """Plans logical multi-tool combinations within a single round."""
-    
-    def __init__(self, registry: ToolRegistry, extractor: RealDataExtractor):
-        self.registry = registry
-        self.extractor = extractor
-        
-        # Define logical tool combinations (removed all pathology tool combinations)
-        self.tool_combinations = {
-            # Segmentation → Analysis workflows
-            "segment_and_analyze": [
-                ["UltraSAM", "LLaVA-Rad"],  # Segment → Generate report
-                ["IterNet", "SpecialistVLMs"],  # Fundus segment → Specialist analysis
-                ["UltraSAM", "LLaVA"],  # Segment → Summarize
-            ],
+class Router:
+    """Task/modality‑aware picker with optional preferences."""
+    def __init__(self, registry: ToolRegistry):
+        self.r = registry
 
-            # Detection → Classification workflows  
-            "detect_and_classify": [
-                # ["dsmil", "conch"],  # Detect tumor → Classify tissue
-                # ["conch", "Cellvit"],  # Classify tissue → Segment cells
-                # ["dsmil", "LLaVA-Rad"],  # Detect tumor → Generate report
-            ],
-            
-            # Enhancement → Analysis workflows
-            "enhance_and_analyze": [
-                ["HealthGPT", "LLaVA-Rad"],  # Enhance → Analyze
-                ["HealthGPT", "UltraSAM"],  # Enhance → Segment
-                ["UniGradICON", "LLaVA-Rad"],  # Register → Analyze
-            ],
-            
-            # Analysis → Summarization workflows
-            "analyze_and_summarize": [
-                ["LLaVA-Rad", "LLaVA"],  # Generate report → Summarize
-                ["SpecialistVLMs", "LLaVA"],  # Specialist analysis → Summarize
-                ["LLaVA-Rad", "RaTE-NER"],  # Generate report → Extract entities
-                ["LLaVA", "PMC-LLaMA"],  # Summarize → Medical QA
-            ],
-            
-            # Complex 3-tool workflows
-            "complex_workflow": [
-                ["UltraSAM", "LLaVA-Rad", "LLaVA"],  # Segment → Report → Summarize
-                ["HealthGPT", "UltraSAM", "LLaVA"],  # Enhance → Segment → Summarize
-            ]
-        }
-        
-        # Combination weights
-        self.combination_weights = {
-            "segment_and_analyze": 0.4,
-            "enhance_and_analyze": 0.3,
-            "analyze_and_summarize": 0.2,
-            "complex_workflow": 0.1
-        }
-        
-    def plan_multi_tool_combination(self) -> List[str]:
-        """Plan a multi-tool combination."""
-        # Select combination type
-        combo_type = random.choices(
-            list(self.combination_weights.keys()),
-            weights=list(self.combination_weights.values())
-        )[0]
-        
-        # Select specific combination
-        combinations = self.tool_combinations[combo_type]
-        selected_combo = random.choice(combinations)
-        
-        # Verify all tools have available data
-        available_tools = []
-        for tool in selected_combo:
-            if self.extractor.get_random_example(tool):
-                available_tools.append(tool)
-                
-        # Ensure we have at least 2 tools
-        if len(available_tools) < 2:
-            # Fallback to any available tools
-            all_tools = list(self.registry.tools.keys())
-            available_all = [t for t in all_tools if self.extractor.get_random_example(t)]
-            if len(available_all) >= 2:
-                available_tools = random.sample(available_all, 2)
-                
-        return available_tools
+    def pick(self, task: str, modality: str, prefer: Optional[List[str]] = None) -> Optional[str]:
+        candidates = self.r.tools_for_task_and_modality(task, modality)
+        if prefer:
+            pref = [t for t in prefer if t in candidates and self.r.is_compatible(t, modality)]
+            if pref:
+                return random.choice(pref)
+        return random.choice(candidates) if candidates else None
 
-# -----------------------------------------------------------------------------
-# Multi-tool conversation builder
-# -----------------------------------------------------------------------------
+def pick_segmentation(router: Router, modality: str) -> Optional[str]:
+    if modality == "US":
+        return router.pick("segmentation", modality, prefer=["UltraSAM"])
+    if modality == "Retina-Fundus":
+        return router.pick("segmentation", modality, prefer=["IterNet"])
+    return router.pick("segmentation", modality, prefer=["MedSAM"])  # CT/MRI/X-ray/Gross
 
-class MultiToolConversationBuilder:
-    """Builds conversations with multiple tools in a single round."""
-    
-    def __init__(self, registry: ToolRegistry, extractor: RealDataExtractor):
-        self.registry = registry
-        self.extractor = extractor
-        
-        # Request templates (removed pathology_comprehensive)
-        self.request_templates = {
-            # "pathology_comprehensive": [
-            #     # Clinical assessment variations
-            #     "I need a thorough pathological assessment of this specimen. What do you see?",
-            #     "Can you provide a comprehensive histopathological evaluation of this slide?",
-            #     "What's your complete diagnostic impression of this tissue sample?",
-            #     "I'm looking for a detailed pathology workup - what are your findings?",
-            #     "Could you give me a full microscopic examination report for this case?",
-                
-            #     # Concern-based inquiries
-            #     "I'm worried about malignancy in this biopsy. What's your assessment?",
-            #     "There might be something concerning here - can you take a look?",
-            #     "I need to rule out cancer in this specimen. What do you think?",
-            #     "This patient has concerning symptoms - what does the histology show?",
-            #     "I'm seeing some abnormal areas - can you help me evaluate them?",
-                
-            #     # Educational/learning context
-            #     "This is an interesting case for our tumor board - what's your analysis?",
-            #     "I'm presenting this at our pathology conference - help me understand the findings.",
-            #     "This is a teaching case - can you walk through the diagnostic features?",
-            #     "Our residents are struggling with this case - what would you highlight?",
-            #     "I want to use this for medical education - what are the key findings?"
-            # ],
-            
-            "radiology_comprehensive": [
-                # Diagnostic urgency variations
-                "STAT read needed - what are the critical findings in this scan?",
-                "Emergency case - I need your immediate assessment of this image.",
-                "Patient is in the ER - what's your rapid interpretation?",
-                "Urgent consultation needed - what do you see here?",
-                "Time-sensitive case - please provide your diagnostic impression.",
-                
-                # Routine clinical scenarios  
-                "Can you help me interpret this routine imaging study?",
-                "I need a comprehensive read of this scan for my patient.",
-                "What's your assessment of this imaging for our weekly review?",
-                "Standard workup case - what are your findings?",
-                "Regular follow-up scan - any changes or concerns?",
-                
-                # Comparison and follow-up
-                "How does this compare to previous imaging? Any progression?",
-                "I need to assess treatment response - what do you see?",
-                "Post-operative follow-up - is there anything concerning?",
-                "Surveillance imaging - any new developments?",
-                "Pre-treatment planning - what's the current status?"
-            ],
-            
-            "quality_enhancement": [
-                # Image quality issues
-                "This scan has some technical issues - can you still extract useful information?",
-                "The image quality isn't ideal - what can you determine?",
-                "Motion artifacts are present - help me see through the noise.",
-                "Low-resolution study - can you enhance and analyze?",
-                "Suboptimal imaging conditions - what diagnostic info can you get?",
-                
-                # Enhancement for better visualization
-                "I need clearer visualization of the anatomical structures here.",
-                "Can you optimize this image for better diagnostic clarity?",
-                "The contrast isn't great - can you help me see the details better?",
-                "Enhancement needed for accurate measurement and assessment.",
-                "I need the best possible image quality for precise diagnosis."
-            ],
-            
-            "multi_modal_analysis": [
-                # Complex diagnostic scenarios
-                "This is a challenging case requiring multiple analytical approaches.",
-                "I need the most comprehensive evaluation possible for this complex patient.",
-                "Multidisciplinary case - what can you contribute from imaging perspective?",
-                "Difficult diagnosis - I need all available analytical tools applied.",
-                "Complex presentation - help me piece together the findings.",
-                
-                # Research and academic context
-                "Research case - I need detailed quantitative and qualitative analysis.",
-                "Publication-quality assessment needed - what are your findings?",
-                "Grant application case study - provide comprehensive analysis.",
-                "Academic presentation - what would you emphasize?",
-                "Scientific documentation needed - thorough evaluation required."
-            ],
-            
-            "clinical_decision_support": [
-                # Treatment planning
-                "Treatment planning case - what information do you need to provide?",
-                "Surgical planning - help me understand the anatomical relationships.",
-                "Therapy selection depends on these findings - what do you see?",
-                "Pre-procedural assessment - any contraindications or concerns?",
-                "Management decisions hinge on this analysis - please be thorough.",
-                
-                # Patient communication prep
-                "I need to explain these findings to the patient - help me understand them.",
-                "Family consultation tomorrow - what should I highlight?",
-                "Patient education case - what are the key points to communicate?",
-                "Informed consent discussion - what risks should I mention?",
-                "Prognosis discussion preparation - what does this tell us?"
-            ],
-            
-            "second_opinion": [
-                # Peer consultation
-                "Second opinion needed - do you agree with my initial assessment?",
-                "Colleague asked me to review this - what's your take?",
-                "Quality assurance case - please provide independent analysis.",
-                "I want to confirm my findings - what do you see?",
-                "External review requested - can you provide your assessment?",
-                
-                # Challenging cases
-                "I'm uncertain about this case - can you help clarify?",
-                "Atypical presentation - what's your diagnostic impression?",
-                "Borderline findings - how would you interpret this?",
-                "Equivocal results - what additional insights can you provide?",
-                "Diagnostic dilemma - what's your analysis?"
-            ],
-            
-            "registration_workflow": [
-                # Temporal comparison
-                "I have these two studies from different time points - what's changed?",
-                "Progression assessment needed - how do these scans compare?",
-                "Before and after treatment - what differences do you see?",
-                "Serial imaging evaluation - any concerning developments?",
-                "Longitudinal analysis required - what's the evolution?",
-                
-                # Multi-sequence analysis
-                "I need to correlate findings across these different sequences.",
-                "Cross-sectional analysis of these related images needed.",
-                "Comparative assessment of these complementary studies.",
-                "Integration of findings from these multiple acquisitions.",
-                "Synthesis needed across these different imaging approaches."
-            ],
-            
-            "screening_detection": [
-                # Preventive care
-                "Routine screening case - any abnormalities detected?",
-                "Population health screening - what's your assessment?",
-                "Early detection protocol - are there any concerning findings?",
-                "Asymptomatic patient screening - anything to flag?",
-                "Preventive imaging evaluation - what do you recommend?",
-                
-                # High-risk patients
-                "High-risk patient surveillance - any new developments?",
-                "Genetic predisposition screening - what do you see?",
-                "Occupational health screening - any exposure-related changes?",
-                "Family history concern - is there anything suspicious?",
-                "Risk stratification case - what's your assessment?"
-            ],
-            
-            "research_academic": [
-                # Scientific analysis
-                "Research protocol case - I need quantitative measurements.",
-                "Clinical trial imaging - what are the objective findings?",
-                "Biomarker study - can you extract relevant features?",
-                "Outcome prediction research - what prognostic indicators do you see?",
-                "Machine learning validation - what ground truth can you provide?",
-                
-                # Educational content
-                "Medical school teaching case - what would you emphasize?",
-                "Residency training material - highlight the learning points.",
-                "CME presentation case - what are the key takeaways?",
-                "Board exam preparation - what should students focus on?",
-                "Continuing education case - what's clinically relevant?"
-            ],
-            
-            "subspecialty_focused": [
-                # Specialized domains
-                "Pediatric case - what age-specific considerations apply?",
-                "Geriatric patient - any age-related findings?",
-                "Oncology case - staging and prognostic information needed.",
-                "Cardiovascular focus - what hemodynamic insights can you provide?",
-                "Neurological assessment - any functional implications?",
-                
-                # Specialized techniques
-                "Molecular pathology correlation needed - what do you see?",
-                "Immunohistochemistry guidance - what would you recommend?",
-                "Advanced imaging protocol - specialized analysis required.",
-                "Functional imaging interpretation - what does this reveal?",
-                "Interventional planning - what anatomical details are crucial?"
-            ]
-        }
-        
-        # Task descriptions for each tool (removed pathology tools)
-        self.task_descriptions = {
-            "UltraSAM": "segment the ultrasound image",
-            "IterNet": "perform fundus segmentation", 
-            "LLaVA-Rad": "generate a radiological report",
-            "LLaVA": "provide a summary",
-            "SpecialistVLMs": "conduct specialist analysis",
-            "HealthGPT": "enhance the image quality",
-            "UniGradICON": "register the images",
-            "RaTE-NER": "extract medical entities",
-            "PMC-LLaMA": "answer medical questions"
-        }
-        
-    def build_multi_tool_conversation(self, tool_chain: List[str]) -> Dict[str, Any]:
-        """Build a conversation using multiple tools in one round."""
-        if len(tool_chain) < 2:
+def pick_report(router: Router, modality: str) -> Optional[str]:
+    if modality in ["CT", "MRI", "US", "X-ray"]:
+        return router.pick("report_generation", modality, prefer=["LLaVA-Rad"])
+    if modality == "Retina-OCT":
+        return router.pick("report_generation", modality, prefer=["SpecialistVLMs"])
+    return None
+
+def pick_analysis(router: Router, modality: str) -> Optional[str]:
+    if modality in ["CT", "MRI", "X-ray", "Gross"]:
+        return router.pick("analysis", modality, prefer=["BiomedClip", "LLaVA-Med"])
+    if modality == "Retina-Fundus":
+        return router.pick("segmentation", modality, prefer=["IterNet"])
+    if modality == "US":
+        return router.pick("analysis", modality, prefer=["LLaVA-Med"])
+    if modality == "Retina-OCT":
+        return router.pick("analysis", modality, prefer=["LLaVA-Med"])
+    return router.pick("analysis", modality, prefer=["LLaVA-Med"])
+
+def pick_registration(router: Router, modality: str) -> Optional[str]:
+    if modality in ["CT", "MRI"]:
+        return router.pick("registration", modality, prefer=["UniGradICON"])
+    return None
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Single‑round builder (no pathology chains)
+# ──────────────────────────────────────────────────────────────────────────────
+
+MODALITY_WEIGHTS = {
+    "CT": 0.22, "MRI": 0.22, "X-ray": 0.22, "US": 0.14,
+    "Retina-Fundus": 0.08, "Retina-OCT": 0.06, "Gross": 0.06,
+}
+
+def sample_modality() -> str:
+    items, w = zip(*MODALITY_WEIGHTS.items())
+    return random.choices(items, weights=w, k=1)[0]
+
+def vague_prompt_for_modality(mod: str, comparative: bool) -> str:
+    if comparative:
+        return "How did the findings change after therapy?"
+    if mod == "US":
+        return "What matters most in this ultrasound?"
+    if mod in ["CT", "MRI"]:
+        return "Please review this scan and explain the key findings."
+    if mod == "X-ray":
+        return "Please review this chest X-ray and tell me what matters most."
+    if mod == "Retina-Fundus":
+        return "What are the important findings in this fundus image?"
+    if mod == "Retina-OCT":
+        return "Please analyze this OCT and summarize what matters."
+    if mod == "Gross":
+        return "Please analyze this gross specimen image and summarize the key findings."
+    return "Please analyze this image and summarize what matters most."
+
+class SingleRoundBuilder:
+    """Plans a 2–3 tool chain, assembles the 4‑turn sample, and validates it."""
+    def __init__(self, registry: ToolRegistry, extractor: RealDataExtractor,
+                 max_steps: int = 3, p_three_steps: float = 0.6, p_comparative_ct_mri: float = 0.25):
+        self.r = registry
+        self.ex = extractor
+        self.router = Router(registry)
+        self.max_steps = max_steps
+        self.p_three = p_three_steps
+        self.p_compare = p_comparative_ct_mri
+
+    def _emit_image_tags(self, n: int) -> str:
+        return "".join("<image>\n" for _ in range(max(0, n)))
+
+    def plan_chain(self) -> Dict[str, Any]:
+        """Choose modality and tools; prefer useful 2–3 step chains."""
+        modality = sample_modality()
+        steps: List[str] = []
+        comparative = False
+        want_three = (random.random() < self.p_three)
+
+        if modality in ["CT", "MRI"] and (random.random() < self.p_compare):
+            # Comparative CT/MRI: registration → report → summarize
+            reg = pick_registration(self.router, modality)
+            rep = pick_report(self.router, modality)
+            steps = [t for t in [reg, rep, "LLaVA"] if t]
+            comparative = True
+
+        elif modality == "US":
+            steps = [t for t in [pick_segmentation(self.router, modality),
+                                pick_report(self.router, modality),
+                                "LLaVA"] if t]
+
+        elif modality == "X-ray":
+            steps = [t for t in [pick_segmentation(self.router, modality) or
+                                pick_analysis(self.router, modality),
+                                pick_report(self.router, modality),
+                                "LLaVA"] if t]
+
+        elif modality in ["CT", "MRI"]:  # non-comparative
+            steps = [t for t in [pick_segmentation(self.router, modality) or
+                                pick_analysis(self.router, modality),
+                                pick_report(self.router, modality),
+                                "LLaVA"] if t]
+
+        elif modality == "Retina-Fundus":
+            steps = [t for t in [pick_segmentation(self.router, modality), "LLaVA"] if t]
+
+        elif modality == "Retina-OCT":
+            steps = [t for t in [pick_analysis(self.router, modality),
+                                pick_report(self.router, modality),  # SpecialistVLMs
+                                "LLaVA"] if t]
+            if not want_three and len(steps) >= 3:
+                steps = steps[:2]
+
+        elif modality == "Gross":
+            steps = [t for t in [pick_segmentation(self.router, modality) or
+                                pick_analysis(self.router, modality),
+                                "LLaVA"] if t]
+
+        # Enforce 2-step minimum / optional 3rd step
+        if len(steps) >= 3 and not want_three:
+            steps = steps[:2]
+        if len(steps) < 2:
+            if modality in ["CT", "MRI"]:
+                steps = [t for t in [pick_analysis(self.router, modality),
+                                    pick_report(self.router, modality)] if t] or \
+                        [t for t in [pick_analysis(self.router, modality), "LLaVA"] if t]
+            else:
+                steps = [t for t in [pick_analysis(self.router, modality), "LLaVA"] if t]
+
+        return {"modality": modality, "tools": steps, "comparative": comparative}
+
+    def build_entry(self) -> Dict[str, Any]:
+        """Materialize a valid 4‑turn conversation using real params/outputs."""
+        plan = self.plan_chain()
+        tools = plan["tools"]
+        modality = plan["modality"]
+        comparative = plan["comparative"]
+        if len(tools) < 2:
             return {}
-            
-        # Get examples for all tools
-        examples = []
-        for tool in tool_chain:
-            example = self.extractor.get_random_example(tool)
-            if not example:
+
+        # Anchor on first tool example for image(s)
+        first_ex = self.ex.get_random_example(tools[0])
+        if not first_ex:
+            return {}
+
+        first_img = self._first_image(first_ex.image_path)
+        image_list: List[str] = [first_img] if first_img else []
+        if "UniGradICON" in tools:
+            second = self.ex.get_different_image(image_list)
+            if not second:
                 return {}
-            examples.append(example)
-            
-        # Use the first example for base metadata
-        base_example = examples[0]
-        
-        # Create user request
-        user_request = self._create_multi_tool_request(tool_chain, examples)
-        
-        # Create assistant response with multiple tools
-        assistant_response = self._create_multi_tool_assistant_response(tool_chain, examples)
-        
-        # Create tool outputs  
-        tool_output_message = self._create_multi_tool_output(tool_chain, examples)
-        
-        # Create final assistant response
-        final_response = self._create_final_multi_tool_response(tool_chain, examples)
-        
-        # Handle image field properly
-        image_field = base_example.image_path
-        all_images = [base_example.image_path]
-        
-        # For registration tasks, we need to handle multiple images
-        if "UniGradICON" in tool_chain:
-            # Add a second image for registration (simulate or use another example)
-            if len(examples) > 1 and examples[1].image_path != base_example.image_path:
-                second_image = examples[1].image_path
-            else:
-                # Generate a related image path for registration
-                second_image = base_example.image_path.replace('.jpg', '_followup.jpg').replace('.png', '_followup.png')
-            all_images.append(second_image)
-            image_field = all_images  # Use list for multiple images
-        
-        return {
-            "session_id": str(uuid.uuid4()),
-            "image_id": base_example.image_id,
-            "image": image_field,
-            "file_name": base_example.image_path,  # Primary image
-            "conversations": [
-                {"from": "human", "value": user_request},
-                assistant_response,
-                {"from": "human", "value": tool_output_message}, 
-                final_response
-            ]
-        }
-        
-    def _create_multi_tool_request(self, tool_chain: List[str], examples: List[ToolExample]) -> str:
-        """Create a complex user question that naturally requires multiple tools."""
-        # Handle special cases for image registration
-        if "UniGradICON" in tool_chain:
-            image_prefix = "<image>\n<image>\n"  # Two images for registration
-            template_category = "registration_workflow"
+            image_list.append(second)
+
+        # Turn 1: human prompt with <image> tags
+        prompt_core = vague_prompt_for_modality(modality, comparative)
+        if len(image_list) == 2:
+            user_value = f"{self._emit_image_tags(1)}{self._emit_image_tags(1)}{prompt_core}"
         else:
-            image_prefix = "<image>\n"
-            
-            # Determine template category based on tool combination
-            segmentation_tools = {"UltraSAM", "IterNet"}
-            analysis_tools = {"LLaVA-Rad", "SpecialistVLMs"}
-            enhancement_tools = {"HealthGPT", "UniGradICON"}
-            summarization_tools = {"LLaVA", "RaTE-NER", "PMC-LLaMA"}
-            
-            # Primary category selection with weighted randomness
-            if any(tool in segmentation_tools for tool in tool_chain) and any(tool in analysis_tools for tool in tool_chain):
-                # Segmentation + Analysis workflows
-                seg_analysis_categories = ["radiology_comprehensive", "clinical_decision_support", "multi_modal_analysis"]
-                template_category = random.choice(seg_analysis_categories)
-                
-            elif any(tool in enhancement_tools for tool in tool_chain):
-                # Enhancement workflows  
-                enhancement_categories = ["quality_enhancement", "clinical_decision_support"]
-                template_category = random.choice(enhancement_categories)
-                
-            elif any(tool in analysis_tools for tool in tool_chain) and any(tool in summarization_tools for tool in tool_chain):
-                # Analysis + Summarization workflows
-                analysis_categories = ["radiology_comprehensive", "second_opinion", "clinical_decision_support"]
-                template_category = random.choice(analysis_categories)
-                
-            elif len(tool_chain) >= 3:
-                # Complex multi-tool workflows
-                complex_categories = ["multi_modal_analysis", "research_academic", "subspecialty_focused"]
-                template_category = random.choice(complex_categories)
-                
-            else:
-                # Default categories with variety
-                default_categories = ["radiology_comprehensive", "clinical_decision_support"]
-                template_category = random.choice(default_categories)
-            
-        # Select appropriate template
-        if template_category in self.request_templates:
-            request_text = random.choice(self.request_templates[template_category])
+            user_value = f"{self._emit_image_tags(1)}{prompt_core}"
+        user_turn = {"from": "human", "value": user_value}
+
+        # Turn 2: assistant plan (Thoughts + Actions + Value)
+        actions, names = [], []
+        for i, tool in enumerate(tools):
+            ex_for_params = self.ex.get_random_example(tool) or first_ex
+            step = {"API_name": tool, "API_params": ex_for_params.tool_params}
+            if i > 0:
+                step["depends_on"] = [tools[i-1]]
+            actions.append(step)
+            names.append(tool)
+        plan_thoughts, plan_value = self._plan_text(names, modality, comparative)
+        asst_turn2 = {"from": "gpt", "thoughts": plan_thoughts, "actions": actions, "value": plan_value}
+
+        # Turn 3: human returns concatenated tool outputs
+        outputs_blocks = []
+        sampled_examples: List[ToolExample] = []
+        for tool in tools:
+            ex = self.ex.get_random_example(tool)
+            if not ex:
+                return {}
+            sampled_examples.append(ex)
+            out = ex.tool_output.strip() or ex.assistant_response.strip() or "(no output)"
+            if len(out) > 1200:
+                out = out[:1200] + " ... <truncated>"
+            outputs_blocks.append(f"{tool} output: {out}")
+        human_outputs_value = "\n\n".join(outputs_blocks) + f"\n\nAnswer my first request: {prompt_core}"
+        human_turn3 = {"from": "human", "value": human_outputs_value}
+
+        # Turn 4: assistant final answer
+        last_ex = sampled_examples[-1]
+        final_value = last_ex.assistant_response.strip() or self._synthesize_final_value(tools, modality)
+        final_thoughts = f"Based on the outputs of {', '.join(tools)}, I can provide a comprehensive answer."
+        asst_turn4 = {"from": "gpt", "thoughts": final_thoughts, "actions": [], "value": final_value}
+
+        conversations = [user_turn, asst_turn2, human_turn3, asst_turn4]
+
+        if not self._validate(conversations, image_list, tools, modality):
+            return {}
+
+        top_image_field: Union[str, List[str]] = image_list[0] if len(image_list) == 1 else image_list
+        return {"image": top_image_field, "conversations": conversations}
+
+    # ——— helpers ———
+    def _first_image(self, image_path: Union[str, List[str], None]) -> Optional[str]:
+        if isinstance(image_path, list):
+            return image_path[0] if image_path else None
+        return image_path
+
+    def _plan_text(self, tool_names: List[str], modality: str, comparative: bool) -> (str, str):
+        thoughts = ("Register the two scans, generate a comparison report, then summarize the change."
+                    if comparative else
+                    "Run a logical multi-tool chain and then synthesize a concise answer.")
+        if len(tool_names) == 2:
+            value = f"I'll use {tool_names[0]} first, then {tool_names[1]} to complete the task."
         else:
-            # Fallback with variety
-            fallback_options = [
-                "Can you provide a comprehensive analysis of this medical image?",
-                "I need a thorough assessment of this case.",
-                "What's your diagnostic impression of this study?",
-                "Help me understand what's happening in this image.",
-                "I need your expert analysis of these findings."
-            ]
-            request_text = random.choice(fallback_options)
-            
-        return image_prefix + request_text
-        
-    def _create_multi_tool_assistant_response(self, tool_chain: List[str], examples: List[ToolExample]) -> Dict[str, Any]:
-        """Create assistant response with multiple tool actions."""
-        # Create diverse reasoning patterns
-        reasoning_styles = [
-            "systematic_clinical", "problem_solving", "educational", 
-            "urgent_assessment", "comprehensive_analysis", "methodical_approach"
-        ]
-        style = random.choice(reasoning_styles)
-        
-        thoughts = self._generate_diverse_thoughts(tool_chain, style)
-        
-        # Create actions for all tools
-        actions = []
-        for i, (tool, example) in enumerate(zip(tool_chain, examples)):
-            actions.append({
-                "API_name": tool,
-                "API_params": example.tool_params
-            })
-            
-        # Create diverse value responses
-        value = self._generate_diverse_value_response(tool_chain, style)
-        
-        return {
-            "from": "gpt",
-            "thoughts": thoughts,
-            "actions": actions, 
-            "value": value
-        }
-        
-    def _generate_diverse_thoughts(self, tool_chain: List[str], style: str) -> str:
-        """Generate diverse reasoning patterns based on style."""
-        tool_count = len(tool_chain)
-        
-        if style == "systematic_clinical":
-            thoughts = f"For a thorough clinical assessment, I'll employ a {tool_count}-step systematic approach. "
-            if tool_count == 2:
-                thoughts += f"I'll begin with {tool_chain[0]} to {self._get_tool_reasoning(tool_chain[0])}, "
-                thoughts += f"followed by {tool_chain[1]} to {self._get_tool_reasoning(tool_chain[1])}. "
-                thoughts += "This systematic workflow ensures comprehensive evaluation."
-            else:
-                thoughts += f"The sequence will be: {' → '.join(tool_chain)}, providing complete diagnostic information."
-                
-        elif style == "problem_solving":
-            thoughts = f"This clinical question requires a multi-faceted analytical approach. "
-            thoughts += f"I'll tackle this by using {tool_count} complementary tools. "
-            thoughts += f"Starting with {tool_chain[0]} to establish baseline findings, "
-            if tool_count > 1:
-                thoughts += f"then proceeding with {tool_chain[1]} for additional insights. "
-            thoughts += "This problem-solving strategy should provide the complete picture."
-            
-        elif style == "educational":
-            thoughts = f"From a diagnostic perspective, this case requires {tool_count} analytical steps. "
-            thoughts += f"First, {tool_chain[0]} will help us {self._get_tool_reasoning(tool_chain[0])}, "
-            if tool_count > 1:
-                thoughts += f"then {tool_chain[1]} will allow us to {self._get_tool_reasoning(tool_chain[1])}. "
-            thoughts += "This educational approach demonstrates proper diagnostic methodology."
-            
-        elif style == "urgent_assessment":
-            thoughts = f"Given the clinical urgency, I need to rapidly deploy {tool_count} tools for immediate assessment. "
-            thoughts += f"Quick analysis with {tool_chain[0]} first, then rapid follow-up with {tool_chain[1] if tool_count > 1 else 'additional tools'}. "
-            thoughts += "Time-efficient but thorough evaluation is essential."
-            
-        elif style == "comprehensive_analysis":
-            thoughts = f"A comprehensive evaluation requires integrating multiple analytical approaches. "
-            thoughts += f"I'll conduct a detailed {tool_count}-tool analysis: "
-            thoughts += f"{', '.join([f'{tool} for {self._get_tool_reasoning(tool)}' for tool in tool_chain])}. "
-            thoughts += "This comprehensive strategy ensures no diagnostic detail is missed."
-            
-        else:  # methodical_approach
-            thoughts = f"I'll approach this methodically using {tool_count} specialized tools. "
-            thoughts += f"Step 1: {tool_chain[0]} - {self._get_tool_reasoning(tool_chain[0])}. "
-            if tool_count > 1:
-                thoughts += f"Step 2: {tool_chain[1]} - {self._get_tool_reasoning(tool_chain[1])}. "
-            if tool_count > 2:
-                thoughts += f"Step 3: {tool_chain[2]} - {self._get_tool_reasoning(tool_chain[2])}. "
-            thoughts += "This methodical approach ensures systematic evaluation."
-            
-        return thoughts
-        
-    def _generate_diverse_value_response(self, tool_chain: List[str], style: str) -> str:
-        """Generate diverse value responses based on style."""
-        tool_count = len(tool_chain)
-        
-        response_templates = {
-            "systematic_clinical": [
-                f"I'll conduct a systematic {tool_count}-step clinical analysis to provide you with comprehensive findings.",
-                f"Let me perform a thorough clinical evaluation using {tool_count} specialized analytical tools.",
-                f"I'll systematically analyze this case using multiple diagnostic approaches for complete assessment."
-            ],
-            "problem_solving": [
-                f"This requires a strategic multi-tool approach - I'll solve this step by step using {tool_count} different analyses.",
-                f"Let me break down this complex case using {tool_count} complementary analytical methods.",
-                f"I'll tackle this diagnostic challenge using multiple specialized tools for comprehensive insights."
-            ],
-            "educational": [
-                f"This is an excellent case for demonstrating multi-tool analysis - let me walk through the {tool_count}-step process.",
-                f"I'll demonstrate proper diagnostic methodology using {tool_count} different analytical approaches.",
-                f"This case showcases how multiple tools work together - let me show you the complete workflow."
-            ],
-            "urgent_assessment": [
-                f"I'll provide rapid but thorough assessment using {tool_count} tools for immediate clinical insights.",
-                f"Quick multi-tool analysis incoming - {tool_count} steps for fast but comprehensive evaluation.",
-                f"Time-sensitive analysis using {tool_count} specialized tools for urgent diagnostic information."
-            ],
-            "comprehensive_analysis": [
-                f"I'll provide the most comprehensive analysis possible using {tool_count} different specialized tools.",
-                f"Complete diagnostic workup requires {tool_count} analytical approaches - let me process this thoroughly.",
-                f"This case deserves comprehensive evaluation - I'll use {tool_count} tools for complete assessment."
-            ],
-            "methodical_approach": [
-                f"I'll work through this methodically using {tool_count} analytical steps for precise evaluation.",
-                f"Methodical analysis requires {tool_count} sequential steps - let me process this systematically.",
-                f"I'll approach this case step-by-step using {tool_count} specialized tools for accurate diagnosis."
-            ]
-        }
-        
-        return random.choice(response_templates[style])
-        
-    def _get_tool_reasoning(self, tool_name: str) -> str:
-        """Get reasoning for why each tool is needed (removed pathology tools)."""
-        reasoning_map = {
-            "UltraSAM": "identify and segment the anatomical structures",
-            "IterNet": "perform detailed fundus analysis",
-            "LLaVA-Rad": "generate comprehensive radiological findings",
-            "LLaVA": "provide clear summary and interpretation",
-            "SpecialistVLMs": "conduct specialized medical analysis",
-            "HealthGPT": "enhance image quality for better visualization",
-            "UniGradICON": "align and register the images properly",
-            "RaTE-NER": "extract specific medical entities and terminology",
-            "PMC-LLaMA": "provide evidence-based medical insights"
-        }
-        return reasoning_map.get(tool_name, f"analyze using {tool_name}")
-        
-    def _create_multi_tool_output(self, tool_chain: List[str], examples: List[ToolExample]) -> str:
-        """Create tool output message for multiple tools."""
-        outputs = []
-        for tool, example in zip(tool_chain, examples):
-            outputs.append(f"{tool} output: {example.tool_output}")
-            
-        # Combine all outputs
-        combined_output = "\n\n".join(outputs)
-        
-        # Reference the original complex question rather than explicit tool request
-        original_question = self._get_original_question_context(tool_chain, examples)
-        return f"{combined_output}\n\nAnswer my original question: {original_question}"
-        
-    def _get_original_question_context(self, tool_chain: List[str], examples: List[ToolExample]) -> str:
-        """Generate a contextual reference to the original question with diversity."""
-        # Different ways to reference the original question
-        reference_styles = [
-            "direct_question", "clinical_inquiry", "assessment_request", 
-            "consultation_query", "diagnostic_question", "evaluation_request"
-        ]
-        style = random.choice(reference_styles)
-        
-        # Generate diverse question references based on tool combination (removed pathology section)
-        radiology_tools = {"UltraSAM", "IterNet", "LLaVA-Rad", "SpecialistVLMs"}
-        enhancement_tools = {"HealthGPT", "UniGradICON"}
-        
-        if any(tool in radiology_tools for tool in tool_chain):
-            if style == "direct_question":
-                questions = ["What can you tell me about this medical image?", "What do you see in this scan?", "What are the findings?"]
-            elif style == "clinical_inquiry":
-                questions = ["What's your radiological assessment?", "What are the imaging findings?", "What does this scan show?"]
-            elif style == "assessment_request":
-                questions = ["Please interpret this imaging study.", "I need your assessment of this scan.", "Can you evaluate this medical image?"]
-            elif style == "consultation_query":
-                questions = ["What's your reading of this study?", "I'd like your opinion on these images.", "Can you provide your interpretation?"]
-            elif style == "diagnostic_question":
-                questions = ["What's your diagnostic impression?", "What diagnosis do these findings suggest?", "What's your interpretation?"]
-            else:  # evaluation_request
-                questions = ["Please provide a comprehensive read.", "I need detailed imaging analysis.", "Can you give me a thorough assessment?"]
-                
-        elif "UniGradICON" in tool_chain:
-            if style == "direct_question":
-                questions = ["How do these images compare?", "What differences do you see?", "What's changed between these scans?"]
-            elif style == "clinical_inquiry":
-                questions = ["What's the progression between these studies?", "How do these time points compare?", "What evolution do you observe?"]
-            elif style == "assessment_request":
-                questions = ["Please compare these sequential images.", "I need comparison of these studies.", "Can you assess the changes?"]
-            elif style == "consultation_query":
-                questions = ["What's your opinion on the progression?", "How would you interpret these changes?", "What's your assessment of evolution?"]
-            elif style == "diagnostic_question":
-                questions = ["What do these changes suggest?", "What's the significance of these differences?", "What's your interpretation of progression?"]
-            else:  # evaluation_request
-                questions = ["Please evaluate the temporal changes.", "I need assessment of progression.", "Can you analyze the evolution?"]
-                
-        else:
-            # General medical imaging questions
-            if style == "direct_question":
-                questions = ["What's your analysis of this case?", "What do you see here?", "What are your findings?"]
-            elif style == "clinical_inquiry":
-                questions = ["What's your clinical assessment?", "What are the significant findings?", "What's your medical opinion?"]
-            elif style == "assessment_request":
-                questions = ["Please assess this medical case.", "I need your evaluation.", "Can you analyze this study?"]
-            elif style == "consultation_query":
-                questions = ["What's your professional opinion?", "I'd like your consultation.", "Can you provide your expertise?"]
-            elif style == "diagnostic_question":
-                questions = ["What's your diagnostic thinking?", "What diagnosis do you suggest?", "What's your clinical impression?"]
-            else:  # evaluation_request
-                questions = ["Please provide comprehensive analysis.", "I need thorough evaluation.", "Can you give detailed assessment?"]
-        
-        return random.choice(questions)
-        
-    def _create_final_multi_tool_response(self, tool_chain: List[str], examples: List[ToolExample]) -> Dict[str, Any]:
-        """Create final assistant response combining all tool results.""" 
-        # Diverse response styles
-        response_styles = ["clinical_report", "integrated_summary", "diagnostic_synthesis", 
-                         "educational_explanation", "structured_findings", "narrative_assessment"]
-        style = random.choice(response_styles)
-        
-        # Create thoughts showing integration of results
-        thoughts = self._generate_integration_thoughts(tool_chain, style)
-        
-        # Create diverse response formats
-        combined_response = self._generate_integrated_response(tool_chain, examples, style)
-        
-        return {
-            "from": "gpt",
-            "thoughts": thoughts,
-            "actions": [],
-            "value": combined_response
-        }
-        
-    def _generate_integration_thoughts(self, tool_chain: List[str], style: str) -> str:
-        """Generate diverse integration thoughts based on style."""
-        tool_count = len(tool_chain)
-        
-        thoughts_templates = {
-            "clinical_report": f"I now have comprehensive clinical data from {tool_count} analytical tools ({', '.join(tool_chain)}). I can synthesize these findings into a cohesive clinical assessment.",
-            
-            "integrated_summary": f"The {tool_count}-tool analysis using {', '.join(tool_chain)} provides complementary information that I can integrate for a complete diagnostic picture.",
-            
-            "diagnostic_synthesis": f"With results from {', '.join(tool_chain)}, I can now perform diagnostic synthesis to provide definitive conclusions about this case.",
-            
-            "educational_explanation": f"The multi-tool approach using {', '.join(tool_chain)} demonstrates how different analytical methods contribute to comprehensive diagnosis. I can now explain the complete findings.",
-            
-            "structured_findings": f"Having completed analysis with {tool_count} tools ({', '.join(tool_chain)}), I can now present structured findings addressing all aspects of the clinical question.",
-            
-            "narrative_assessment": f"The comprehensive evaluation using {', '.join(tool_chain)} allows me to provide a narrative assessment that tells the complete diagnostic story."
-        }
-        
-        return thoughts_templates[style]
-        
-    def _generate_integrated_response(self, tool_chain: List[str], examples: List[ToolExample], style: str) -> str:
-        """Generate diverse integrated responses based on style."""
-        
-        if style == "clinical_report":
-            if len(examples) == 2:
-                response = f"CLINICAL FINDINGS: {examples[0].assistant_response} ADDITIONAL ASSESSMENT: {examples[1].assistant_response} CLINICAL IMPRESSION: The combined analysis provides comprehensive diagnostic information for clinical decision-making."
-            else:
-                parts = [f"ANALYSIS {i+1}: {ex.assistant_response}" for i, ex in enumerate(examples)]
-                response = " ".join(parts) + " SUMMARY: Multi-modal analysis complete."
-                
-        elif style == "integrated_summary":
-            connectors = ["Building on this,", "Furthermore,", "Additionally,", "In conjunction with this,", "Complementing these findings,"]
-            if len(examples) == 2:
-                response = f"My comprehensive assessment reveals: {examples[0].assistant_response} {random.choice(connectors)} {examples[1].assistant_response} These integrated findings provide a complete diagnostic picture."
-            else:
-                parts = []
-                for i, ex in enumerate(examples):
-                    if i == 0:
-                        parts.append(f"Initial analysis shows: {ex.assistant_response}")
-                    elif i == len(examples) - 1:
-                        parts.append(f"Final assessment confirms: {ex.assistant_response}")
-                    else:
-                        parts.append(f"{random.choice(connectors)} {ex.assistant_response}")
-                response = " ".join(parts)
-                
-        elif style == "diagnostic_synthesis":
-            if len(examples) == 2:
-                response = f"DIAGNOSTIC SYNTHESIS: Combining findings from multiple analytical approaches: First, {examples[0].assistant_response} Second, {examples[1].assistant_response} CONCLUSION: The convergent evidence supports a comprehensive diagnostic assessment."
-            else:
-                response = f"MULTI-TOOL DIAGNOSTIC SYNTHESIS: " + " → ".join([f"{ex.assistant_response}" for ex in examples]) + " The synthesized evidence provides definitive diagnostic clarity."
-                
-        elif style == "educational_explanation":
-            if len(examples) == 2:
-                response = f"Let me walk you through the findings: Starting with the first analysis: {examples[0].assistant_response} Moving to the second evaluation: {examples[1].assistant_response} This step-by-step approach demonstrates how multiple tools provide complementary diagnostic information."
-            else:
-                parts = [f"Step {i+1} reveals: {ex.assistant_response}" for i, ex in enumerate(examples, 1)]
-                response = "Educational walkthrough: " + " ".join(parts) + " This systematic approach showcases comprehensive diagnostic methodology."
-                
-        elif style == "structured_findings":
-            if len(examples) == 2:
-                response = f"STRUCTURED ASSESSMENT:\n• Primary Analysis: {examples[0].assistant_response}\n• Secondary Analysis: {examples[1].assistant_response}\n• Integrated Conclusion: Multi-tool evaluation provides comprehensive diagnostic clarity."
-            else:
-                bullet_points = [f"• Analysis {i+1}: {ex.assistant_response}" for i, ex in enumerate(examples, 1)]
-                response = "COMPREHENSIVE FINDINGS:\n" + "\n".join(bullet_points) + "\n• OVERALL ASSESSMENT: Complete multi-modal diagnostic evaluation achieved."
-                
-        else:  # narrative_assessment
-            narrative_transitions = ["The diagnostic story unfolds as follows:", "This case presents an interesting narrative:", "The complete diagnostic picture emerges:"]
-            transition_words = ["Subsequently,", "Following this,", "The investigation continues with", "Further analysis reveals"]
-            
-            if len(examples) == 2:
-                response = f"{random.choice(narrative_transitions)} {examples[0].assistant_response} {random.choice(transition_words)} {examples[1].assistant_response} This comprehensive narrative provides complete diagnostic insight."
-            else:
-                parts = [examples[0].assistant_response]
-                for ex in examples[1:]:
-                    parts.append(f"{random.choice(transition_words)} {ex.assistant_response}")
-                response = f"{random.choice(narrative_transitions)} " + " ".join(parts) + " The complete diagnostic narrative is now established."
-                
-        return response
+            value = f"I'll use {tool_names[0]}, then {tool_names[1]}, and finally {tool_names[2]} to complete the task."
+        return thoughts, value
 
-# -----------------------------------------------------------------------------
-# Main generation function
-# -----------------------------------------------------------------------------
+    def _synthesize_final_value(self, tools: List[str], modality: str) -> str:
+        if "UniGradICON" in tools:
+            return "Registration shows interval change; the comparison report indicates response without new concerning findings."
+        if modality == "US":
+            return "Key structures are segmented, the report aligns with the imaging appearance, and the summary covers the main abnormality."
+        if modality == "X-ray":
+            return "No acute cardiopulmonary process is identified; correlate clinically and follow up as needed."
+        if modality in ["CT", "MRI"]:
+            return "Findings are summarized from analysis and structured reporting; consider clinical correlation and follow-up."
+        if modality == "Retina-Fundus":
+            return "Segmentation-driven assessment highlights key retinal findings; recommend ophthalmology follow-up."
+        if modality == "Retina-OCT":
+            return "OCT analysis and the specialist-style report capture the primary features; follow clinical guidance."
+        if modality == "Gross":
+            return "Salient macroscopic features are identified and summarized for clinical correlation."
+        return "Findings are summarized from tool outputs with suggested next steps."
 
-def validate_conversation_images(conversation: Dict[str, Any]) -> bool:
-    """Validate that the number of <image> tokens matches the number of provided images."""
-    if not conversation or "conversations" not in conversation:
-        return False
-        
-    # Count <image> tokens in all messages
-    total_image_tokens = 0
-    for msg in conversation["conversations"]:
-        if msg.get("from") == "human":
-            content = msg.get("value", "")
-            total_image_tokens += content.count("<image>")
-    
-    # Count actual images provided - check both old and new formats
-    images_field = conversation.get("images", [])  # New format
-    if not images_field:
-        # Fallback to old format for compatibility
-        image_field = conversation.get("image", "")
-        if isinstance(image_field, list):
-            actual_images = len([img for img in image_field if img])
-        elif isinstance(image_field, str) and image_field:
-            actual_images = 1
-        else:
-            actual_images = 0
-    else:
-        # New format - images is a list
-        actual_images = len([img for img in images_field if img])
-    
-    # Validate match
-    if total_image_tokens != actual_images:
-        print(f"WARNING: Image token mismatch - Found {total_image_tokens} <image> tokens but {actual_images} actual images")
-        return False
-        
-    return True
+    def _validate(self, conversations: List[Dict[str, Any]], image_list: List[str], tools: List[str], modality: str) -> bool:
+        """Structural sanity checks so the training loader sees consistent data."""
+        # Image tag count must match number of images
+        user_msg = conversations[0]["value"]
+        if user_msg.count("<image>") != len(image_list):
+            return False
+        # Registration chains must be CT/MRI with exactly two images
+        if "UniGradICON" in tools:
+            if modality not in ["CT", "MRI"] or len(image_list) != 2:
+                return False
+        # Require: 4 turns, plan turn has actions, outputs turn ends with "Answer my first request:"
+        if len(conversations) != 4:
+            return False
+        if not conversations[1].get("actions"):
+            return False
+        if "Answer my first request:" not in conversations[2].get("value", ""):
+            return False
+        return True
 
-
-def generate_multi_tool_conversation(
-    registry: ToolRegistry, 
-    extractor: RealDataExtractor
-) -> Dict[str, Any]:
-    """Generate a single multi-tool conversation with validation."""
-    planner = MultiToolPlanner(registry, extractor)
-    builder = MultiToolConversationBuilder(registry, extractor)
-    
-    # Plan tool combination
-    tool_chain = planner.plan_multi_tool_combination()
-    if not tool_chain:
-        return {}
-        
-    # Build conversation
-    conversation = builder.build_multi_tool_conversation(tool_chain)
-    
-    # Validate before returning
-    if conversation and validate_conversation_images(conversation):
-        return conversation
-    else:
-        print(f"Skipping invalid conversation for tools: {tool_chain}")
-        return {}
-
-# -----------------------------------------------------------------------------
-# CLI interface
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate multi-tool single-round conversations")
-    parser.add_argument("--tool_yaml", type=str, required=True, help="Path to tool metadata YAML")
-    parser.add_argument("--single_round_dir", type=str, required=True, help="Path to single-round examples directory")
-    parser.add_argument("--out", type=str, required=True, help="Output file path")
-    parser.add_argument("--num", type=int, required=True, help="Number of conversations to generate")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description="Build single-round multi-tool dataset (no pathology chains).")
+    ap.add_argument("--tool_yaml", type=str, required=True, help="Path to tool metadata YAML.")
+    ap.add_argument("--single_round_dir", type=str, required=True, help="Directory with per-tool JSONL examples.")
+    ap.add_argument("--out", type=str, required=True, help="Output JSONL file.")
+    ap.add_argument("--num", type=int, required=True, help="Number of samples to generate.")
+    ap.add_argument("--max_steps", type=int, default=3, help="Max tools per chain (2 or 3).")
+    ap.add_argument("--p_three_steps", type=float, default=0.4, help="Probability of 3‑tool chains.")
+    ap.add_argument("--p_compare", type=float, default=0.25, help="Probability of comparative CT/MRI chain (registration).")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    args = ap.parse_args()
+
+    random.seed(args.seed)
 
     registry = ToolRegistry(args.tool_yaml)
     extractor = RealDataExtractor(args.single_round_dir)
+    builder = SingleRoundBuilder(registry, extractor,
+                                 max_steps=args.max_steps,
+                                 p_three_steps=args.p_three_steps,
+                                 p_comparative_ct_mri=args.p_compare)
 
-    conversations = []
-    failed_count = 0
-    
-    for i in range(args.num):
-        conversation = generate_multi_tool_conversation(registry, extractor)
-        if conversation:
-            conversations.append(conversation)
-        else:
-            failed_count += 1
+    print("Loading tool examples (up to 40 per tool for a quick scan)...")
+    total = 0
+    for tool_name in registry.tools:
+        n = len(extractor.load_tool_examples(tool_name, max_examples=40))
+        print(f"{tool_name}: loaded {n} examples")
+        total += n
+    print(f"Total examples loaded: {total}")
 
-    # Save results
-    with open(args.out, "w") as f:
-        for conversation in conversations:
-            f.write(json.dumps(conversation, ensure_ascii=False) + "\n")
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Generated {len(conversations)} multi-tool conversations and saved to {args.out}")
-    if failed_count > 0:
-        print(f"Warning: {failed_count} conversations failed to generate")
-        print("Consider checking your dataset files and tool configurations")
+    success = 0
+    skipped = 0
+    with out_path.open("w", encoding="utf-8") as f:
+        for i in range(args.num):
+            entry = builder.build_entry()
+            if entry:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                success += 1
+            else:
+                skipped += 1
+            if (i + 1) % 100 == 0:
+                print(f"Progress {i+1}/{args.num} | Success {success} | Skipped {skipped}")
+
+    print("\nFinal Results:")
+    print(f"Generated: {success} valid")
+    print(f"Success rate: {success / max(args.num,1) * 100:.1f}%")
+    print(f"Total skipped: {skipped}")
+    print(f"Saved to {args.out}")
 
 if __name__ == "__main__":
     main()
