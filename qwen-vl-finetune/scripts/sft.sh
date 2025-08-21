@@ -17,7 +17,7 @@ deepspeed=./scripts/zero3_offload.json
 # ----------------------------
 # Model configuration
 # ----------------------------
-llm='/home/jack/Projects/yixin-llm/yixin-llm-data/MedicalGPT/weights/Qwen2.5-VL-7B-Instruct'
+llm='weights/Qwen2.5-VL-7B-Instruct'
 
 # ----------------------------
 # Training hyperparameters
@@ -39,18 +39,18 @@ entry_file=./qwenvl/train/train_qwen.py
 # ----------------------------
 # Dataset config
 # ----------------------------
-datasets=single_tool_multi_round,multi_tool_multi_round #,multi_tool_single_round
+datasets=single_tool_multi_round,multi_tool_multi_round,multi_tool_single_round
 
 # ----------------------------
 # Output config
 # ----------------------------
-output_dir=/data3/qwen-weights/output_7b
+output_dir=/data3/qwen-weights/output_7b_test
 logging_dir="${output_dir}/tensorboard_logs"
 run_name="qwen2vl-lora-baseline"
 
 # --------  (Re)start policy --------------------------------------------------
 # We want a clean run, so wipe any stray checkpoints.
-rm -rf "${output_dir}"/checkpoint-*
+rm -rf "${output_dir}"/checkpoint-* 
 
 resume_flag=False
 
