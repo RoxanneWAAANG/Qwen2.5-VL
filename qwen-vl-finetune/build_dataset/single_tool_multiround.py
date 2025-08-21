@@ -1,247 +1,227 @@
-'''
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+single_tool_multiround.py
+
+Build multi-round dialogues from single-round tool conversations by optionally
+inserting (1) a greeting round at the beginning and (2) a closing round at the end.
+
+Input:  One or more JSONL files where each line is a dict that includes
+        a 'conversations' array (single-round dialogue) and arbitrary metadata.
+Output: A JSONL file of sessions with augmented multi-round conversations.
+
+Example:
 python3 single_tool_multiround.py \
   --input tool_instruct/*.jsonl \
   --greetings corpus_pack/greetings.txt \
   --banks corpus_pack/phrase_banks.yaml \
   --output multi_round/single_tool_multiround.jsonl
-'''
+"""
 
 import argparse
-import json
-import random
-import uuid
 import glob
-import yaml
+import json
+import os
+import random
 from typing import Dict, List, Any, Sequence
 
+import yaml
+
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Helper functions
+# I/O utilities
 # ──────────────────────────────────────────────────────────────────────────────
 def load_jsonl(path: str) -> List[Dict[str, Any]]:
-    """Load JSONL file into list of dictionaries"""
-    with open(path, 'r', encoding='utf-8') as f:
+    """Load a JSONL file into a list of dictionaries (skip blank lines)."""
+    with open(path, "r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
-# def dump_jsonl(data: Sequence[Dict[str, Any]], path: str) -> None:
-#     """Save list of dictionaries to JSONL file"""
-#     with open(path, 'w', encoding='utf-8') as f:
-#         for row in data:
-#             f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
 def dump_jsonl(data: Sequence[Dict[str, Any]], path: str) -> None:
-    with open(path, 'w', encoding='utf-8') as f:
+    """
+    Write a list of dictionaries to JSONL.
+    We escape literal newlines to keep each example on one physical line.
+    """
+    with open(path, "w", encoding="utf-8") as f:
         for row in data:
-            # Quick fix: ensure the JSON string doesn't contain literal newlines
-            json_str = json.dumps(row, ensure_ascii=False)
-            # Replace any literal newlines that somehow got through
-            json_str = json_str.replace('\n', '\\n').replace('\r', '\\r')
-            f.write(json_str + '\n')
+            s = json.dumps(row, ensure_ascii=False)
+            s = s.replace("\n", "\\n").replace("\r", "\\r")
+            f.write(s + "\n")
+
 
 def load_lines(path: str) -> List[str]:
-    """Load text file into list of lines"""
-    with open(path, 'r', encoding='utf-8') as f:
+    """Load a UTF-8 text file into a list of non-empty, stripped lines."""
+    with open(path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
+
 def load_banks(path: str) -> Dict[str, Any]:
-    """Load YAML phrase banks"""
-    with open(path, 'r', encoding='utf-8') as f:
+    """Load a YAML file that contains phrase banks (e.g., starters/closings)."""
+    with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Conversation building
+# Conversation builders
 # ──────────────────────────────────────────────────────────────────────────────
 def create_greeting_round(greetings: List[str], banks: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Create opening greeting round"""
-    # Use greetings file first, fallback to banks if needed
-    if greetings:
-        greeting = random.choice(greetings)
-    else:
-        greeting = random.choice(banks.get('starters', ['Hello!']))
-        
+    """
+    Create an opening greeting round:
+      human: greeting text (from greetings.txt if available, else banks.starters)
+      gpt  : short small-talk response (from banks.agent_smalltalk)
+    """
+    human_greet = random.choice(greetings) if greetings else random.choice(
+        banks.get("starters", ["Hello!"])
+    )
+    agent_smalltalk = random.choice(
+        banks.get("agent_smalltalk", ["Hello! How can I help you today?"])
+    )
+
     return [
+        {"from": "human", "value": human_greet},
         {
-            "from": "human", 
-            "value": greeting
+            "from": "gpt",
+            "thoughts": "The user greeted me; respond warmly and offer help.",
+            "actions": [],
+            "value": agent_smalltalk,
         },
-        {
-            "from": "gpt", 
-            "thoughts": "The user is greeting me. I should respond warmly and offer assistance.", 
-            "actions": [], 
-            "value": random.choice(banks.get('agent_smalltalk', ['Hello! How can I help you today?']))
-        }
     ]
+
 
 def create_closing_round(banks: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Create closing round with random phrases"""
-    # Use dedicated closing phrases if available, otherwise fall back to smalltalk
-    user_closing_phrases = banks.get('user_closing', banks.get('user_smalltalk', ["That's all for now, thanks!"]))
-    agent_closing_phrases = banks.get('agent_closing', banks.get('agent_smalltalk', ["Glad I could help! Have a great day."]))
-    
+    """
+    Create a closing round:
+      human: user closing phrase (banks.user_closing fallback to user_smalltalk)
+      gpt  : agent closing phrase (banks.agent_closing fallback to agent_smalltalk)
+    """
+    user_phrases = banks.get(
+        "user_closing", banks.get("user_smalltalk", ["That's all for now, thanks!"])
+    )
+    agent_phrases = banks.get(
+        "agent_closing", banks.get("agent_smalltalk", ["Glad I could help! Have a great day."])
+    )
+
     return [
+        {"from": "human", "value": random.choice(user_phrases)},
         {
-            "from": "human", 
-            "value": random.choice(user_closing_phrases)
+            "from": "gpt",
+            "thoughts": "The user is closing; end politely and offer future help.",
+            "actions": [],
+            "value": random.choice(agent_phrases),
         },
-        {
-            "from": "gpt", 
-            "thoughts": "The user is closing the conversation. I should respond politely and offer future assistance.", 
-            "actions": [], 
-            "value": random.choice(agent_closing_phrases)
-        }
     ]
 
-def build_session(
-    example: Dict[str, Any],
-    greetings: List[str],
-    banks: Dict[str, Any]
-) -> Dict[str, Any]:
+
+def build_session(example: Dict[str, Any], greetings: List[str], banks: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Build a complete session with:
-    1. Greeting round (optional, 80% chance)
-    2. Original conversation 
-    3. Closing round (optional, 70% chance)
+    Build a complete multi-round session:
+      1) Optional greeting round (80% chance)
+      2) Original single-round conversation (as-is)
+      3) Optional closing round (70% chance)
     """
-    # Get original conversation
-    original_convo = example.get('conversations', [])
-    
-    # Build the complete conversation
-    conversation = []
-    
-    # 1. Optionally add greeting round (80% chance)
+    original_convo = example.get("conversations", [])
+    conversation: List[Dict[str, Any]] = []
+
+    # 1) Greeting (probabilistic)
     if random.random() < 0.8:
         conversation.extend(create_greeting_round(greetings, banks))
-    
-    # 2. Add original conversation (single-round dialogue)
+
+    # 2) Original content (single-round tool dialogue)
     conversation.extend(original_convo)
-    
-    # 3. Optionally add closing round (70% chance)  
+
+    # 3) Closing (probabilistic)
     if random.random() < 0.7:
         conversation.extend(create_closing_round(banks))
-    
-    # Create session object with all original metadata
-    session = {}
-    
-    # Copy all original fields
-    for key, value in example.items():
-        if key != 'conversations' and key != "image_id" and key != "file_name":  # Don't copy the old conversations
-            session[key] = value
-    
-    # Add the new conversation
-    session['conversations'] = conversation
-    
-    # # Add session ID if not present
-    # if 'session_id' not in session:
-    #     session['session_id'] = str(uuid.uuid4())
-    
+
+    # Preserve original metadata except for old conversation and image-only keys
+    session: Dict[str, Any] = {}
+    for k, v in example.items():
+        if k not in {"conversations", "image_id", "file_name"}:
+            session[k] = v
+
+    session["conversations"] = conversation
     return session
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Main processing
+# Main
 # ──────────────────────────────────────────────────────────────────────────────
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Generate multi-round dialogues by adding greeting/closing rounds to single-round tool conversations."
+    )
+    p.add_argument(
+        "--input", nargs="+", required=True, help="Input JSONL file(s) or glob patterns with single-round conversations."
+    )
+    p.add_argument("--greetings", required=True, help="Text file of greeting phrases (one per line).")
+    p.add_argument("--banks", required=True, help="YAML file with phrase banks (starters, smalltalk, closings).")
+    p.add_argument("--output", required=True, help="Output JSONL file path.")
+    p.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    return p.parse_args()
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='Generate multi-round dialogues by adding greetings/closings to single-round conversations'
-    )
-    parser.add_argument(
-        '--input', 
-        nargs='+', 
-        required=True,
-        help='Input JSONL file(s) with single-round conversations'
-    )
-    parser.add_argument(
-        '--greetings', 
-        required=True,
-        help='Text file containing greeting phrases'
-    )
-    parser.add_argument(
-        '--banks', 
-        required=True,
-        help='YAML file with phrase banks for agent responses'
-    )
-    parser.add_argument(
-        '--output', 
-        required=True,
-        help='Output JSONL file path'
-    )
-    
-    args = parser.parse_args()
-    
-    # Load all input files
-    print("Loading input files...")
-    single_rounds = []
+    args = parse_args()
+    random.seed(args.seed)
+
+    # Load inputs
+    single_rounds: List[Dict[str, Any]] = []
     for pattern in args.input:
         for file_path in glob.glob(pattern):
-            print(f"  Loading: {file_path}")
-            data = load_jsonl(file_path)
-            single_rounds.extend(data)
-            # print(f"    Loaded {len(data)} conversations")
-    
-    print(f"Total loaded: {len(single_rounds)} single-round conversations")
-    
-    # Load greetings and phrase banks
-    # print("Loading greetings and phrase banks...")
+            single_rounds.extend(load_jsonl(file_path))
+
+    print(f"Loaded {len(single_rounds)} single-round conversations")
 
     greetings = load_lines(args.greetings)
-    # print(f"Loaded {len(greetings)} greetings")
-    
     banks = load_banks(args.banks)
-    # print(f"Loaded phrase banks with keys: {list(banks.keys())}")
-    
-    # Generate multi-round sessions
+
+    # Generate sessions
     print("Generating multi-round sessions...")
-    sessions = []
-    greeting_count = 0
-    closing_count = 0
-    
-    for i, example in enumerate(single_rounds):
-        # if i % 1000 == 0 and i > 0:
-            # print(f"  Processed {i}/{len(single_rounds)} conversations...")
-            
-        session = build_session(example, greetings, banks)
-        sessions.append(session)
-        
-        # Count added greetings/closings for statistics
-        conv_len = len(session['conversations'])
-        orig_len = len(example.get('conversations', []))
-        
-        if conv_len > orig_len:
-            # Check if greeting was added (first turn is human greeting)
-            if session['conversations'][0].get('from') == 'human' and \
-               session['conversations'][0].get('value') in greetings + banks.get('starters', []):
-                greeting_count += 1
-            
-            # Check if closing was added (last turn is agent closing)
-            if session['conversations'][-1].get('from') == 'gpt' and \
-               len(session['conversations']) > orig_len + 2:  # +2 for greeting round
-                closing_count += 1
-    
-    # Save output
-    print(f"Saving {len(sessions)} sessions to {args.output}")
+    sessions: List[Dict[str, Any]] = []
+    greeting_added = 0
+    closing_added = 0
+
+    for ex in single_rounds:
+        s = build_session(ex, greetings, banks)
+        sessions.append(s)
+
+        # Simple stats: detect greeting/closing by turn structure
+        conv = s["conversations"]
+        orig_len = len(ex.get("conversations", []))
+
+        # Greeting added if new conversation is longer AND first two turns look like greeting exchange
+        if len(conv) > orig_len and len(conv) >= 2 and conv[0].get("from") == "human" and conv[1].get("from") == "gpt":
+            greeting_added += 1
+
+        # Closing added if last two turns look like a closing exchange
+        if len(conv) >= 2 and conv[-2].get("from") == "human" and conv[-1].get("from") == "gpt":
+            closing_added += 1
 
     # Ensure output directory exists
-    import os
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    
     dump_jsonl(sessions, args.output)
-    print("Done!")
-    
-    # Print statistics
-    print(f"\nStatistics:")
-    print(f"  Original conversations: {len(single_rounds)}")
-    print(f"  Generated sessions: {len(sessions)}")
-    print(f"  Added greetings: {greeting_count} ({greeting_count/len(sessions)*100:.1f}%)")
-    print(f"  Added closings: {closing_count} ({closing_count/len(sessions)*100:.1f}%)")
-    
-    # Sample output preview
-    if sessions:
-        print(f"\nSample conversation structure:")
-        sample = sessions[0]
-        print(f"  Total turns: {len(sample['conversations'])}")
-        print(f"  Fields: {list(sample.keys())}")
-        for i, turn in enumerate(sample['conversations'][:3]):  # Show first 3 turns
-            from_field = turn.get('from', 'unknown')
-            value = turn.get('value', '')[:50] + '...' if len(turn.get('value', '')) > 50 else turn.get('value', '')
-            print(f"    Turn {i+1} [{from_field}]: {value}")
 
-if __name__ == '__main__':
+    # Report
+    print(f"Saved {len(sessions)} sessions to {args.output}")
+    print("\nStatistics")
+    print(f"  Original conversations : {len(single_rounds)}")
+    print(f"  Generated sessions     : {len(sessions)}")
+    print(f"  Added greeting rounds  : {greeting_added} ({greeting_added/len(sessions)*100:.1f}%)")
+    print(f"  Added closing rounds   : {closing_added} ({closing_added/len(sessions)*100:.1f}%)")
+
+    # Quick peek
+    if sessions:
+        sample = sessions[0]
+        print("\nSample conversation preview")
+        print(f"  Total turns: {len(sample['conversations'])}")
+        print(f"  Keys      : {list(sample.keys())}")
+        for i, turn in enumerate(sample["conversations"][:3]):
+            snip = turn.get("value", "")
+            if len(snip) > 64:
+                snip = snip[:61] + "..."
+            print(f"    Turn {i+1} [{turn.get('from','?')}]: {snip}")
+
+
+if __name__ == "__main__":
     main()
