@@ -48,10 +48,6 @@ output_dir=/data3/qwen-weights/output_7b_test
 logging_dir="${output_dir}/tensorboard_logs"
 run_name="qwen2vl-lora-baseline"
 
-# --------  (Re)start policy --------------------------------------------------
-# We want a clean run, so wipe any stray checkpoints.
-rm -rf "${output_dir}"/checkpoint-* 
-
 resume_flag=False
 
 # ----------------------------
