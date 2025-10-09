@@ -155,9 +155,7 @@ def transform(file_path: Path) -> dict:
             {
                 "API_name": "IterNet",
                 "API_params": {
-                    "task": "segment_retinal_vessels",
-                    "image_path": file_name,
-                    "output_format": "binary_mask"
+                    "input_image": file_name,
                 }
             }
         ],
@@ -176,7 +174,7 @@ def transform(file_path: Path) -> dict:
 
     # 4) Final assistant response with formatted result
     # Select a random response template and format it with the output image reference
-    final_response = random.choice(vessel_segmentation_responses).format(mask="<output_image>")
+    final_response = random.choice(vessel_segmentation_responses).format(mask=".")
     assistant_reply = {
         "from": "gpt",
         "thoughts": "The IterNet tool has completed the retinal vessel segmentation task and generated a binary mask. Now I can provide the formatted result to the user.",
@@ -186,9 +184,9 @@ def transform(file_path: Path) -> dict:
 
     # Return the complete conversation record with all required metadata
     return {
-        "image_id": image_id,
-        "image": image_filename,
-        "file_name": file_name,
+        # "image_id": image_id,
+        "image": file_name,
+        # "file_name": file_name,
         "conversations": [
             user_prompt,
             tool_call,

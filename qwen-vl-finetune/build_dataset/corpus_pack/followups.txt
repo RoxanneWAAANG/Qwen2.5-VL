@@ -1,0 +1,44 @@
+Adjust parameters for better {outcome}.
+Can you adjust contrast near the {area}?
+Can you enhance contrast near the {area}?
+Can you improve contrast near the {area}?
+Can you optimize contrast near the {area}?
+Can you refine contrast near the {area}?
+Compare with a conservative threshold on the {feature}.
+Could you adjust the {aspect} around the {area}?
+Could you enhance the {aspect} around the {area}?
+Could you improve the {aspect} around the {area}?
+Could you optimize the {aspect} around the {area}?
+Could you refine the {aspect} around the {area}?
+Cross‑validate using an alternative method, please.
+Deepen analysis on {outcome} in the {area}.
+Examine the {zone} for subtle changes.
+Explore the {area} in more detail.
+Focus on early indicators in the {area}.
+Great start—now adjust {outcome} for the {feature}.
+Great start—now enhance {outcome} for the {feature}.
+Great start—now improve {outcome} for the {feature}.
+Great start—now optimize {outcome} for the {feature}.
+Great start—now refine {outcome} for the {feature}.
+Highlight boundaries of the {area}.
+Increase resolution around the {feature}.
+Isolate the {feature} for a clearer view.
+Let's adjust the {feature} in the {zone}.
+Let's enhance the {feature} in the {zone}.
+Let's improve the {feature} in the {zone}.
+Let's optimize the {feature} in the {zone}.
+Let's refine the {feature} in the {zone}.
+Please adjust the output focusing on the {zone}.
+Please enhance the output focusing on the {zone}.
+Please improve the output focusing on the {zone}.
+Please optimize the output focusing on the {zone}.
+Please refine the output focusing on the {zone}.
+Provide a quantitative breakdown for the {area}.
+Redo with higher sensitivity on the {feature}.
+Reduce noise affecting the {feature}.
+Verify findings within the {zone}.
+Zoom in on the {area} and adjust.
+Zoom in on the {area} and enhance.
+Zoom in on the {area} and improve.
+Zoom in on the {area} and optimize.
+Zoom in on the {area} and refine.

@@ -1,0 +1,182 @@
+{
+  "total_errors": 301,
+  "error_type_counts": {
+    "missing_all_tools": 97,
+    "missing_some_tools": 171,
+    "wrong_tools": 33
+  },
+  "tool_specific_errors": {
+    "LLaVA-Med": {
+      "missed": 40,
+      "hallucinated": 2
+    },
+    "LLaVA": {
+      "missed": 171
+    },
+    "BiomedClip": {
+      "missed": 8,
+      "hallucinated": 10
+    },
+    "UltraSAM": {
+      "missed": 18
+    },
+    "MedSAM": {
+      "hallucinated": 5,
+      "missed": 1
+    },
+    "DSMIL-C16": {
+      "missed": 8,
+      "hallucinated": 1
+    },
+    "grounding dino + MedSAM": {
+      "missed": 2
+    },
+    "grounding dino": {
+      "hallucinated": 6,
+      "missed": 3
+    },
+    "RaTE-NER": {
+      "missed": 1
+    },
+    "DSMIL-TCGA": {
+      "hallucinated": 3,
+      "missed": 4
+    },
+    "SpecialistVLMs": {
+      "hallucinated": 3,
+      "missed": 7
+    },
+    "HealthGPT": {
+      "missed": 18
+    },
+    "LLaVA-Rad": {
+      "missed": 2
+    },
+    "CONCH": {
+      "missed": 13,
+      "hallucinated": 1
+    },
+    "CellSAM": {
+      "missed": 2
+    },
+    "IterNet": {
+      "missed": 3
+    },
+    "RealBeast": {
+      "hallucinated": 1
+    },
+    "MidYixin": {
+      "hallucinated": 1
+    }
+  },
+  "error_examples": {
+    "missing_all_tools": [
+      {
+        "conversation_id": 0,
+        "turn_index": 1,
+        "ground_truth": [
+          "LLaVA-Med"
+        ],
+        "predicted": [],
+        "user_input": "\nWhat type of tumor is shown in the image?"
+      },
+      {
+        "conversation_id": 28,
+        "turn_index": 1,
+        "ground_truth": [
+          "BiomedClip"
+        ],
+        "predicted": [],
+        "user_input": "\n Can you identify the imaging modality of this image?"
+      },
+      {
+        "conversation_id": 31,
+        "turn_index": 1,
+        "ground_truth": [
+          "LLaVA-Med"
+        ],
+        "predicted": [],
+        "user_input": "Provide a detailed description of the given image\n"
+      }
+    ],
+    "missing_some_tools": [
+      {
+        "conversation_id": 1,
+        "turn_index": 0,
+        "ground_truth": [
+          "MedSAM",
+          "LLaVA-Rad",
+          "LLaVA"
+        ],
+        "predicted": [
+          "MedSAM",
+          "LLaVA-Rad"
+        ],
+        "user_input": "\nPlease review this scan and explain the key findings."
+      },
+      {
+        "conversation_id": 4,
+        "turn_index": 0,
+        "ground_truth": [
+          "MedSAM",
+          "LLaVA-Rad",
+          "LLaVA"
+        ],
+        "predicted": [
+          "MedSAM",
+          "LLaVA-Rad"
+        ],
+        "user_input": "\nPlease review this chest X-ray and tell me what matters most."
+      },
+      {
+        "conversation_id": 6,
+        "turn_index": 0,
+        "ground_truth": [
+          "UniGradICON",
+          "LLaVA-Rad",
+          "LLaVA"
+        ],
+        "predicted": [
+          "UniGradICON",
+          "LLaVA-Rad"
+        ],
+        "user_input": "\n\nHow did the findings change after therapy?"
+      }
+    ],
+    "wrong_tools": [
+      {
+        "conversation_id": 34,
+        "turn_index": 1,
+        "ground_truth": [
+          "UltraSAM"
+        ],
+        "predicted": [
+          "MedSAM"
+        ],
+        "user_input": "\n\nOutline the area inside [336.0, 123.0, 488.0, 266.0] on ultrasound image."
+      },
+      {
+        "conversation_id": 48,
+        "turn_index": 1,
+        "ground_truth": [
+          "DSMIL-C16"
+        ],
+        "predicted": [
+          "BiomedClip"
+        ],
+        "user_input": "\n Is tumor present in this image?\n\n"
+      },
+      {
+        "conversation_id": 77,
+        "turn_index": 1,
+        "ground_truth": [
+          "grounding dino + MedSAM"
+        ],
+        "predicted": [
+          "grounding dino"
+        ],
+        "user_input": "Can you identify the tumor location and segment it in this MRI brain image? \n"
+      }
+    ]
+  }
+}

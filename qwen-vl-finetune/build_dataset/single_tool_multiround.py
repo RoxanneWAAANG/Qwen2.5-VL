@@ -13,10 +13,10 @@ Output: A JSONL file of sessions with augmented multi-round conversations.
 
 Example:
 python3 single_tool_multiround.py \
-  --input tool_instruct/*.jsonl \
+  --input /home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Medical_Agent_Instruction_Tuning/tool_instruct/*.jsonl \
   --greetings corpus_pack/greetings.txt \
   --banks corpus_pack/phrase_banks.yaml \
-  --output multi_round/single_tool_multiround.jsonl
+  --output /home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Medical_Agent_Instruction_Tuning/full_data/single_tool_multiround.jsonl
 """
 
 import argparse

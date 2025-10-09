@@ -116,7 +116,7 @@ def transform(idx: int) -> dict:
     ann_id = random.choice(coco.getAnnIds(imgIds=image_id))
     ann    = coco.loadAnns([ann_id])[0]
     img    = coco.loadImgs([image_id])[0]
-    image = img["file_name"]
+    image = IMG_PATH + img["file_name"]
     file_name = IMG_PATH + img["file_name"]
 
     x, y, w, h = ann["bbox"]
@@ -135,7 +135,8 @@ def transform(idx: int) -> dict:
             {
                 "API_name": "UltraSAM",
                 "API_params": {
-                    "image": image_id,
+                    "query": instruction,
+                    "input_image": image_id,
                     "prompt": {"bboxes": [bbox]}
                 }
             }
@@ -160,9 +161,9 @@ def transform(idx: int) -> dict:
         }
 
     return {
-        "image_id": image_id,
+        # "image_id": image_id,
         "image": image,
-        "file_name": file_name,
+        # "file_name": file_name,
         "conversations": [
             user_prompt,
             tool_call,

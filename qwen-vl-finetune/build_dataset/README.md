@@ -1,40 +1,46 @@
 # Instruction Dataset Building
 
-## Dataset Source
-
-| Dataset                         | Samples |
-|---------------------------------|--------:|
-| BiomedClip                      | 8,804   |
-| CellSAM                         | 2,000   |
-| CellViT                         | 2,000   |
-| ChatCAD-G                       | 4,980   |
-| ChatCAD-R                       | 2,814   |
-| CONCH                           | 4,000   |
-| DSMIL                           | 2,000   |
-| Grounding Dino + MedSAM         | 1,999   |
-| Grounding Dino                  | 4,759   |
-| HealthGPT -- Reconstruction     | 5,000   |
-| HealthGPT -- Super Resolution   | 5,000   |
-| InterNet                        | 5,000   |
-| LLaVA-Rad                       | 5,000   |
-| LLaVA                           | 5,000   |
-| LLaVA-Med                       | 17,687  |
-| MedSAM                          | 6,406   |
-| PMC-LLaMA                       | 10,000  |
-| RaTE-NER                        | 5,000   |
-| SpecialistVLMs                  | 5,000   |
-| UltraSAM                        | 5,000   |
-| UniGradICON                     | 5,000   |
-| Multi-Tool Multi-Round          | 100,000 |
-| **Total**                       | **212,449** |
+## Table of Contents
+- [Overview](#overview)
+- [Dataset Types](#dataset-types)
+- [Single-Round Dialogue](#single-round-dialogue)
+- [One-Tool Multi-Round Dialogue](#one-tool-multi-round-dialogue)
+- [Multi-Tool Multi-Round Dialogue](#multi-tool-multi-round-dialogue)
+- [Image Handling Scenarios](#image-handling-scenarios)
+- [Implementation Guidelines](#implementation-guidelines)
+- [Quality Assurance](#quality-assurance)
 
 ## Overview
 
-1. **Single-Tool Multi-Round**: Basic tool usage (foundation datasets)
-2. **Multi-Tool Multi-Round**: Complex workflows across different tools
-3. **Multi-Tool Single-Round**: Reasoning inside one round.
+Our instruction dataset building pipeline supports three levels of complexity:
+
+1. **Single-Round**: Basic tool usage (foundation datasets)
+2. **One-Tool Multi-Round**: Iterative refinement with same tool
+3. **Multi-Tool Multi-Round**: Complex workflows across different tools
+
+Each level builds upon the previous, enabling progressive training from basic tool usage to complex reasoning chains.
+
+## Dataset Types
+
+### Foundation Datasets (Single-Round)
+- `unigradicon_reg_dataset.jsonl` - Image registration
+- `ultrasam_seg_dataset.jsonl` - Image segmentation  
+- `healthgpt_superres_dataset.jsonl` - Image super-resolution
+- `internet_seg_dataset.jsonl` - Fundus segmentation
+- `llava_rad_rg_dataset.jsonl` - Radiology report generation
+- `llava_sum_dataset.jsonl` - Text summarization
+- `rate_ner_dataset.jsonl` - Named entity recognition
+- `pmc_llama_medqa_dataset.jsonl` - Medical question answering
+- `svlms_fundus_dataset.jsonl` - Specialist analysis
+
+### Generated Datasets (Multi-Round)
+- `one_tool_multiround.jsonl` - Single tool refinement conversations
+- `multi_tool_multiround.jsonl` - Cross-tool workflow conversations
 
 ## Single-Round Dialogue
+
+### Description
+Basic tool usage where user makes one request and assistant provides one complete response using a single tool.
 
 ### Structure
 ```
@@ -56,7 +62,7 @@ User Request → Assistant Tool Call → Tool Output → Assistant Final Respons
     {
       "from": "gpt", 
       "thoughts": "I need to use UltraSAM to segment the lung regions in this chest X-ray image.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
+      "actions": [{"API_name": "UltraSAM", "API_params": {"prompt": "lung"}}],
       "value": "I'll use UltraSAM to segment the lung regions in your chest X-ray."
     },
     {
@@ -67,22 +73,31 @@ User Request → Assistant Tool Call → Tool Output → Assistant Final Respons
       "from": "gpt",
       "thoughts": "Based on the UltraSAM output, I can provide the segmentation results.",
       "actions": [],
-      "value": "The lung segmentation has been completed successfully."
+      "value": "The lung segmentation has been completed successfully. The UltraSAM model has identified the lung regions with 95% accuracy, providing precise boundaries for both left and right lungs."
     }
   ]
 }
 ```
 
-## Single-Tool Multi-Round Dialogue
+### Use Cases
+- **Tool validation**: Ensure each tool works correctly
+- **Basic training**: Teach models fundamental tool usage
+- **Data quality**: High-precision examples for each tool
+- **Foundation building**: Base examples for multi-round generation
+
+## One-Tool Multi-Round Dialogue
+
+### Description
+Iterative refinement using the same tool multiple times with parameter adjustments, clarifications, or progressive enhancement.
 
 ### Structure
 ```
-Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assistant Final Response → Daily Dialogue
+User Request → Tool Call → Refinement Request → Tool Call → Final Request → Tool Call
 ```
 
 ### Scenario Types
 
-#### Scenario A: Parameter Refinement (Optinal)
+#### Scenario A: Parameter Refinement
 **Use Case**: User requests parameter adjustments for better results
 
 ```json
@@ -99,7 +114,7 @@ Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assi
     {
       "from": "gpt",
       "thoughts": "I'll use UltraSAM to segment the liver region.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
+      "actions": [{"API_name": "UltraSAM", "API_params": {"prompt": "liver"}}],
       "value": "I'll segment the liver region using UltraSAM."
     },
     {
@@ -109,58 +124,49 @@ Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assi
     {
       "from": "gpt",
       "thoughts": "I need to refine the segmentation with more specific parameters.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
+      "actions": [{"API_name": "UltraSAM", "API_params": {"prompt": "liver", "precision": "high"}}],
       "value": "I'll refine the segmentation with higher precision to focus specifically on liver tissue."
     },
     {
-      "from": "human",
-      "value": "UltraSAM output: Segmentation complete. Lung regions identified with 95% accuracy.\n\nAnswer my first request: Segment the lung regions in this chest X-ray"
+      "from": "human", 
+      "value": "UltraSAM output: Refined liver segmentation complete with improved boundary precision.\n\nPerfect! Can you also highlight any abnormal areas?"
     },
     {
       "from": "gpt",
-      "thoughts": "Based on the UltraSAM output, I can provide the segmentation results.",
-      "actions": [],
-      "value": "The lung segmentation has been completed successfully."
+      "thoughts": "Now I'll run another segmentation focusing on abnormalities within the liver.",
+      "actions": [{"API_name": "UltraSAM", "API_params": {"prompt": "liver abnormalities", "highlight": true}}],
+      "value": "I'll now run a focused analysis to highlight any abnormal areas within the segmented liver region."
     }
   ]
 }
 ```
 
 #### Scenario B: Progressive Enhancement
-**Use Case**: Add daily dialogue for diversity.
+**Use Case**: User builds complexity gradually
 
 ```json
 {
   "conversations": [
-    {"from": "human", "value": "Greetings friend"},
-    {"from": "gpt", "thoughts": "…", "actions": [], "value": "I'm doing well, thank you."},
-    {
-      "from": "human",
-      "value": "<image>\nSegment the lung regions in this chest X-ray"
-    },
-    {
-      "from": "gpt", 
-      "thoughts": "I need to use UltraSAM to segment the lung regions in this chest X-ray image.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
-      "value": "I'll use UltraSAM to segment the lung regions in your chest X-ray."
-    },
-    {
-      "from": "human",
-      "value": "UltraSAM output: Segmentation complete. Lung regions identified with 95% accuracy.\n\nAnswer my first request: Segment the lung regions in this chest X-ray"
-    },
-    {
-      "from": "gpt",
-      "thoughts": "Based on the UltraSAM output, I can provide the segmentation results.",
-      "actions": [],
-      "value": "The lung segmentation has been completed successfully."
-    }
-    {"from": "human", "value": "That's all -- thanks!"},
-  {"from": "gpt", "thoughts": "…", "actions": [], "value": "Glad to help -- take care!"}]}
+    {"from": "human", "value": "<image>\nWhat's in this medical image?"},
+    {"from": "gpt", "value": "Basic analysis..."},
+    {"from": "human", "value": "Can you provide more technical details?"},
+    {"from": "gpt", "value": "Detailed technical analysis..."},
+    {"from": "human", "value": "Now generate a clinical report format"},
+    {"from": "gpt", "value": "Formal clinical report..."}
   ]
 }
 ```
 
+### Benefits
+- **Tool mastery**: Deep understanding of individual tool capabilities
+- **Parameter optimization**: Learning optimal settings for different scenarios
+- **Iterative refinement**: Teaching progressive improvement strategies
+- **User interaction**: Natural back-and-forth conversation patterns
+
 ## Multi-Tool Multi-Round Dialogue
+
+### Description
+Complex workflows that chain multiple tools together, simulating real medical analysis pipelines.
 
 ### Structure
 ```
@@ -183,10 +189,6 @@ Image Enhancement → Analysis → Specialist Review → Entity Extraction → D
 ```
 Image A Analysis → Image B Analysis → Registration → Comparison Report → Clinical Summary
 ```
-
-## Multi-Tool Single-Round Dialogue
-
-
 
 ## Image Handling Scenarios
 
@@ -300,7 +302,63 @@ Turn 5: Compare findings
 }
 ```
 
+### Scenario 5: Mixed Image and Text-Only Tools
+
+**Use Case**: Complete workflow including text processing
+
+**Example Workflow**:
+```
+Turn 1: Image analysis
+Turn 2: Report generation  
+Turn 3: Named entity recognition (text-only)
+Turn 4: Question answering (text-only)
+```
+
+**Output Format**:
+```json
+{
+  "session_id": "multi_005",
+  "image_id": "pathology_001",
+  "image": "/path/to/pathology_slide.jpg",
+  "file_name": "/path/to/pathology_slide.jpg",
+  "conversations": [
+    {"from": "human", "value": "<image>\nAnalyze this pathology slide"},
+    {"from": "gpt", "value": "Pathology analysis..."},
+    {"from": "human", "value": "Now, extract medical entities from the report"},
+    {"from": "gpt", "value": "Entity extraction without image tags..."}
+  ]
+}
+```
+
 ## Implementation Guidelines
+
+### Tool Chain Design Principles
+
+#### Logical Workflow Chains
+```python
+workflow_chains = {
+    "UniGradICON": ["UltraSAM", "LLaVA-Rad", "HealthGPT"],  # Registration → Analysis
+    "UltraSAM": ["LLaVA-Rad", "SpecialistVLMs"],           # Segmentation → Report  
+    "HealthGPT": ["LLaVA-Rad", "UltraSAM"],                # Enhancement → Analysis
+    "IterNet": ["SpecialistVLMs", "LLaVA-Rad"],            # Fundus → Specialist
+    "LLaVA-Rad": ["LLaVA", "PMC-LLaMA"],                   # Report → Summary/QA
+    "LLaVA": ["RaTE-NER", "PMC-LLaMA"],                    # Summary → NER/QA
+    "RaTE-NER": ["PMC-LLaMA"],                             # NER → QA
+    "PMC-LLaMA": ["LLaVA"],                                # QA → Summary
+    "SpecialistVLMs": ["LLaVA", "PMC-LLaMA"]               # Specialist → Summary/QA
+}
+```
+
+#### Diversity Strategy
+- **Short chains** (2-3 tools): 40% probability
+- **Medium chains** (3-5 tools): 40% probability  
+- **Long chains** (5+ tools): 20% probability
+
+#### Context Awareness
+- **Same image**: `"Following up on the previous analysis..."`
+- **Add registration**: `"Now I have a second image. <image>..."`
+- **Switch image**: `"Now I have a different image to analyze. <image>..."`
+- **Text continuation**: `"Using the previous output..."`
 
 ### Image Management Rules
 
@@ -309,7 +367,51 @@ Turn 5: Compare findings
 # Single image
 "image": "/path/to/single.jpg"
 
-# Multiple images
-# using first image when first input has two images while only one image required after
+# Multiple images  
 "image": ["/path/to/image1.jpg", "/path/to/image2.jpg"]
 ```
+
+#### File Name Consistency
+- Always points to **primary/first** image
+- Maintains metadata consistency across conversation
+- Used for dataset organization and retrieval
+
+#### Tool-Specific Requirements
+```python
+image_requirements = {
+    "UniGradICON": {"min_images": 2, "max_images": 2, "requires_pair": True},
+    "UltraSAM": {"min_images": 1, "max_images": 1, "requires_pair": False},
+    "RaTE-NER": {"min_images": 0, "max_images": 0, "requires_pair": False},
+    "PMC-LLaMA": {"min_images": 0, "max_images": 1, "requires_pair": False}
+}
+```
+
+### Generation Parameters
+
+#### Probability Controls
+- **New image introduction**: 30% chance after turn 2
+- **Registration addition**: Triggered by UniGradICON tool
+- **Text-only continuation**: Based on tool requirements
+
+#### Quality Thresholds
+- **Minimum conversation length**: 2 turns (4 messages)
+- **Maximum conversation length**: 6 turns (12 messages) 
+- **Tool availability check**: Ensure real data exists
+- **Format validation**: Verify Qwen template compliance
+
+## Quality Assurance
+
+### Performance Metrics
+
+#### Coverage Metrics
+- **Tool usage distribution**: Balanced across all 9 tools
+- **Chain length distribution**: Appropriate mix of short/medium/long
+- **Image scenario coverage**: All 5 scenarios represented
+- **Workflow complexity**: Progressive difficulty levels
+
+#### Quality Metrics
+- **Conversation coherence**: Context maintained across turns
+- **Tool appropriateness**: Logical tool selection
+- **Response relevance**: On-topic assistant responses
+- **Format consistency**: Uniform structure across dataset
+

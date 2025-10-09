@@ -65,7 +65,6 @@ reconstruction_response_templates = [
 def transform(file_path: Path) -> dict:
     """Generate one conversation record that fits the desired template."""
     # Pick random context
-    image_id = file_path.stem
     image_filename = file_path.name
     file_name = str(file_path)
 
@@ -84,7 +83,8 @@ def transform(file_path: Path) -> dict:
             {
                 "API_name": "HealthGPT",
                 "API_params": {
-                    "task": "reconstruct_image"
+                    "query": instruction,
+                    "input_image": image_filename,
                 }
             }
         ],
@@ -111,9 +111,9 @@ def transform(file_path: Path) -> dict:
     }
 
     return {
-        "image_id": image_id,
-        "image": image_filename,
-        "file_name": file_name,
+        # "image_id": image_id,
+        "image": file_name,
+        # "file_name": file_name,
         "conversations": [
             user_prompt,
             tool_call,

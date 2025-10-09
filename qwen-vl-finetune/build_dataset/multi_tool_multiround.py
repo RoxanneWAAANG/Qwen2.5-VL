@@ -1,30 +1,12 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Multi-Tool • Multi-Round Conversation Generator
-
-Generates multi-round, tool-augmented conversations in a unified format:
-  {
-    "image": <str or [str, ...]>,
-    "conversations": [ {from, value, thoughts?, actions?}, ... ]
-  }
-
-Usage
------
+'''
 python3 multi_tool_multiround.py \
   --tool_yaml corpus_pack/tool_meta.yaml \
-  --single_round_dir tool_instruct \
-  --out multi_round/multi_tool_multiround.jsonl \
+  --single_round_dir /home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Medical_Agent_Instruction_Tuning/tool_instruct \
+  --out /home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Medical_Agent_Instruction_Tuning/full_data/multi_tool_multiround.jsonl \
   --num 100000
-
-Key Ideas
----------
-• Modalities → Chains (task templates) → Tools (via router)
-• Scenarios control how/when images appear (<image> tags must match image list)
-• Each tool-turn is 4 messages: Human (prompt) → GPT (tool call) → Human (tool output)
-  → GPT (final answer for that turn)
-"""
-
+'''
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import argparse
@@ -32,33 +14,38 @@ import json
 import random
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-
+from typing import Any, Dict, List, Optional, Union, Tuple
+from enum import Enum
 import yaml
+import re
 
 # ===============================
 # Scenario & Chain Definitions
 # ===============================
 
 class ConversationScenario(Enum):
-    SINGLE_IMAGE = "single_image"                        # one image used throughout
-    REGISTRATION_FROM_START = "registration_from_start"  # needs 2 images from turn 1
-    REGISTRATION_ADD_LATER = "registration_add_later"    # add 2nd image in a later turn
-    SWITCH_IMAGE_MID = "switch_image_mid"                # swap to a different image mid chain
-
+    SINGLE_IMAGE = "single_image"                    # Scenario 1
+    REGISTRATION_FROM_START = "registration_from_start"  # Scenario 2
+    REGISTRATION_ADD_LATER = "registration_add_later"    # Scenario 3
+    SWITCH_IMAGE_MID = "switch_image_mid"                # Scenario 4
 
 class ChainType(Enum):
-    COMPLETE_IMAGING = "complete_imaging"  # full imaging pipeline
-    DIAGNOSTIC = "diagnostic"              # enhance/analyze/report/extract/doc
-    COMPARATIVE = "comparative"            # A vs B + registration + comparison
+    COMPLETE_IMAGING = "complete_imaging"   # Chain 1（已去掉 QA）
+    DIAGNOSTIC = "diagnostic"              # Chain 2
+    COMPARATIVE = "comparative"            # Chain 3
+    # 短链（含 QA）
+    REPORT_SUMMARY_QA = "report_summary_qa"    # 报告 → 总结 → QA
+    ANALYSIS_QA = "analysis_qa"                # 分析 → QA
+    SEGMENT_SUMMARY_QA = "segment_summary_qa"  # 分割 → 总结 → QA
+    # 新增：随机混合（示例：先 QA，再注册；中途换图、任务不相关）
+    RANDOM_MIX = "random_mix"                  # QA → Registration（两图）
 
-
-# Chain templates expressed as abstract TASKS (mapped to concrete tools by Router)
+# Chain templates expressed as TASKS (tools are chosen via routing per modality)
 CHAIN_TASKS: Dict[ChainType, List[str]] = {
+    # 去掉 QA：现在 4 步
     ChainType.COMPLETE_IMAGING: [
-        "registration", "segmentation", "report_generation", "summarization", "qa"
+        "registration", "segmentation", "report_generation", "summarization"
     ],
     ChainType.DIAGNOSTIC: [
         "image_enhancement", "analysis", "specialist_review", "entity_extraction", "documentation"
@@ -66,18 +53,35 @@ CHAIN_TASKS: Dict[ChainType, List[str]] = {
     ChainType.COMPARATIVE: [
         "image_a_analysis", "image_b_analysis", "registration", "comparison_report", "clinical_summary"
     ],
+    # 短链（含 QA）
+    ChainType.REPORT_SUMMARY_QA: [
+        "report_generation", "summarization", "qa"
+    ],
+    ChainType.ANALYSIS_QA: [
+        "analysis", "qa"
+    ],
+    ChainType.SEGMENT_SUMMARY_QA: [
+        "segmentation", "summarization", "qa"
+    ],
+    # 随机混合：先 QA，再 Registration（满足你“换了个图做不相关注册”的例子）
+    ChainType.RANDOM_MIX: [
+        "qa", "registration"
+    ],
 }
 
 # ===============================
 # Canonical tool names & mapping
 # ===============================
-
 def canonical_tool_name(name: str) -> str:
     n = (name or "").strip()
     key = n.lower()
     aliases = {
         "conch": "CONCH",
         "dsmil": "DSMIL",
+        "dsmil-tcga": "DSMIL-TCGA",
+        "dsmil_tcga": "DSMIL-TCGA",
+        "dsmil-c16": "DSMIL-C16",
+        "dsmil_c16": "DSMIL-C16",
         "cellvit": "CellViT",
         "cellsam": "CellSAM",
         "unigradicon": "UniGradICON",
@@ -100,7 +104,6 @@ def canonical_tool_name(name: str) -> str:
     }
     return aliases.get(key, n)
 
-
 # ===============================
 # Tool Metadata
 # ===============================
@@ -113,6 +116,8 @@ class Tool:
     default_args: Dict[str, Any]
     refine_responses: List[str]
     success_responses: List[str]
+
+    # New fields (backward-compatible; inferred when absent)
     modalities: List[str] = field(default_factory=list)
     tasks: List[str] = field(default_factory=list)
     requires_two_images: bool = False
@@ -120,6 +125,10 @@ class Tool:
 
     @classmethod
     def from_dict(cls, name: str, cfg: Dict[str, Any], builtin: Dict[str, Dict[str, Any]]) -> "Tool":
+        modalities = cfg.get("modalities") or builtin.get(name, {}).get("modalities", [])
+        tasks = cfg.get("tasks") or builtin.get(name, {}).get("tasks", [])
+        requires_two_images = cfg.get("requires_two_images", builtin.get(name, {}).get("requires_two_images", False))
+        image_optional = cfg.get("image_optional", builtin.get(name, {}).get("image_optional", False))
         return cls(
             name=name,
             modality=cfg.get("modality", ""),
@@ -127,12 +136,11 @@ class Tool:
             default_args=cfg.get("default_args", {}),
             refine_responses=cfg.get("refine_responses", []),
             success_responses=cfg.get("success_responses", []),
-            modalities=cfg.get("modalities") or builtin.get(name, {}).get("modalities", []),
-            tasks=cfg.get("tasks") or builtin.get(name, {}).get("tasks", []),
-            requires_two_images=cfg.get("requires_two_images", builtin.get(name, {}).get("requires_two_images", False)),
-            image_optional=cfg.get("image_optional", builtin.get(name, {}).get("image_optional", False)),
+            modalities=modalities,
+            tasks=tasks,
+            requires_two_images=requires_two_images,
+            image_optional=image_optional,
         )
-
 
 # Built-in routing knowledge (used if YAML lacks modalities/tasks)
 BUILTIN_TOOL_CAPS: Dict[str, Dict[str, Any]] = {
@@ -152,9 +160,11 @@ BUILTIN_TOOL_CAPS: Dict[str, Dict[str, Any]] = {
     "PMC-LLaMA": {"modalities": [], "tasks": ["qa"], "image_optional": True},
     "RaTE-NER": {"modalities": [], "tasks": ["entity_extraction"], "image_optional": True},
     "ChatCAD-R": {"modalities": [], "tasks": ["documentation", "rag"], "image_optional": True},
-    # Pathology
+    # Pathology family
     "CONCH": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tissue_classification", "analysis"]},
     "DSMIL": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tumor_detection", "analysis"]},
+    "DSMIL-TCGA": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tumor_detection", "analysis"]},
+    "DSMIL-C16":  {"modalities": ["Histology", "Histology-WSI", "Histology-Patch"], "tasks": ["tumor_detection", "analysis"]},
     "CellViT": {"modalities": ["Cell-Microscopy"], "tasks": ["cell_segmentation", "analysis"]},
     "CellSAM": {"modalities": ["Histology", "Histology-WSI", "Histology-Patch", "Cell-Microscopy"], "tasks": ["wsi_segmentation", "cell_segmentation", "segmentation"]},
 }
@@ -172,15 +182,14 @@ class ToolRegistry:
             canon = canonical_tool_name(raw_name)
             self.tools[canon] = Tool.from_dict(canon, cfg, BUILTIN_TOOL_CAPS)
 
-    def __contains__(self, name: str) -> bool:
-        return canonical_tool_name(name) in self.tools
-
     def __getitem__(self, name: str) -> Tool:
         return self.tools[canonical_tool_name(name)]
 
+    def has(self, name: str) -> bool:
+        return canonical_tool_name(name) in self.tools
+
     def is_compatible(self, tool_name: str, modality: str) -> bool:
         t = self[tool_name]
-        # tools with empty modalities are text-only or image-optional
         return (not t.modalities) or (modality in t.modalities)
 
     def tools_for_task_and_modality(self, task: str, modality: str) -> List[str]:
@@ -189,7 +198,6 @@ class ToolRegistry:
             if task in t.tasks and (not t.modalities or modality in t.modalities):
                 out.append(name)
         return out
-
 
 # ===============================
 # Real Data Extraction
@@ -206,14 +214,10 @@ class ToolExample:
     assistant_response: str
     thoughts: str
 
-
 class RealDataExtractor:
-    """
-    Loads single-round, per-tool examples and exposes a pool to sample
-    realistic prompts/params/outputs for each tool turn.
-    """
     def __init__(self, tool_instruct_dir: Union[str, Path]):
         self.tool_instruct_dir = Path(tool_instruct_dir)
+        # Canonical tool name -> dataset filename
         self.tool_mapping = {
             "UniGradICON": "unigradicon_reg_dataset.jsonl",
             "UltraSAM": "ultrasam_seg_dataset.jsonl",
@@ -226,6 +230,8 @@ class RealDataExtractor:
             "SpecialistVLMs": "svlms_fundus_dataset.jsonl",
             "CONCH": "CONCH.jsonl",
             "DSMIL": "DSMIL.jsonl",
+            "DSMIL-TCGA": "DSMIL-TCGA.jsonl",
+            "DSMIL-C16": "DSMIL-C16.jsonl",
             "CellViT": "CellViT.jsonl",
             "CellSAM": "CellSAM.jsonl",
             "LLaVA-Med": "LLaVA-Med.jsonl",
@@ -301,14 +307,15 @@ class RealDataExtractor:
         tool_params = actions[0].get("API_params", {})
         tool_output_msg = conversations[2]["value"]
         tool_output = tool_output_msg.split("Answer my first request:")[0].strip()
-        prefix = f"{actual_tool_name} output:"
-        if tool_output.startswith(prefix):
-            tool_output = tool_output[len(prefix):].strip()
+        if tool_output.startswith(f"{actual_tool_name} output:"):
+            tool_output = tool_output[len(f"{actual_tool_name} output:"):].strip()
         assistant_response = conversations[3]["value"] if len(conversations) > 3 else ""
 
         image_data = data.get("image") or data.get("images")
-        image_path: Union[str, List[str], None]
-        image_path = image_data if isinstance(image_data, list) else image_data
+        if isinstance(image_data, list):
+            image_path = image_data
+        else:
+            image_path = image_data
 
         return ToolExample(
             tool_name=actual_tool_name,
@@ -325,7 +332,6 @@ class RealDataExtractor:
         exs = self.load_tool_examples(tool_name)
         return random.choice(exs) if exs else None
 
-
 # ===============================
 # Conversation State & Artifacts
 # ===============================
@@ -338,7 +344,6 @@ class Artifact:
     content: Optional[str] = None
     file_path: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ConvState:
@@ -366,12 +371,12 @@ class ConvState:
         if context:
             self.conversation_context.append(context)
 
-
 # ===============================
 # Router (task → tool by modality)
 # ===============================
 
 class Router:
+    """Encapsulates modality-aware routing for tasks."""
     def __init__(self, registry: ToolRegistry):
         self.r = registry
 
@@ -384,7 +389,7 @@ class Router:
         return random.choice(candidates) if candidates else None
 
     def route_chain_task(self, chain_task: str, modality: str) -> Optional[str]:
-        # Complete Imaging
+        # Chain 1 (Complete Imaging)
         if chain_task == "registration":
             return self.pick("registration", modality, prefer=["UniGradICON"])
         if chain_task == "segmentation":
@@ -406,14 +411,14 @@ class Router:
         if chain_task == "qa":
             return self.pick("qa", modality, prefer=["PMC-LLaMA"])
 
-        # Diagnostic
+        # Chain 2 (Diagnostic Workflow)
         if chain_task == "image_enhancement":
             if modality in ["X-ray", "CT", "MRI", "US"]:
                 return self.pick("reconstruction", modality, prefer=["HealthGPT"])
             return None
         if chain_task == "analysis":
             if modality in ["Histology", "Histology-WSI", "Histology-Patch"]:
-                return self.pick("analysis", modality, prefer=["CONCH", "DSMIL", "CellSAM"])
+                return self.pick("analysis", modality, prefer=["CONCH", "DSMIL", "DSMIL-TCGA", "DSMIL-C16", "CellSAM"])
             if modality == "Cell-Microscopy":
                 return self.pick("analysis", modality, prefer=["CellViT", "CellSAM"])
             return self.pick("analysis", modality, prefer=["BiomedClip", "LLaVA-Med"])
@@ -428,7 +433,7 @@ class Router:
         if chain_task == "documentation":
             return self.pick("documentation", modality, prefer=["ChatCAD-R"])
 
-        # Comparative
+        # Chain 3 (Comparative)
         if chain_task in ["image_a_analysis", "image_b_analysis"]:
             if modality in ["CT", "MRI", "X-ray"]:
                 return self.pick("analysis", modality, prefer=["BiomedClip", "MedSAM"])
@@ -439,33 +444,29 @@ class Router:
             return None
         if chain_task == "clinical_summary":
             return self.pick("summarization", modality, prefer=["LLaVA"]) or self.pick("qa", modality, prefer=["PMC-LLaMA"])
-
         return None
-
 
 # ===============================
 # Planner (modality + chain + scenario)
 # ===============================
 
-class EnhancedSingleRoundBank:
-    def __init__(self, root: Union[str, Path]):
-        self.extractor = RealDataExtractor(root)
-
-    def get_example(self, tool_name: str) -> Optional[ToolExample]:
-        return self.extractor.get_random_example(tool_name)
-
-
 class ScenarioPlanner:
-    def __init__(self, registry: ToolRegistry, bank: EnhancedSingleRoundBank):
+    def __init__(self, registry: ToolRegistry, bank: "EnhancedSingleRoundBank"):
         self.registry = registry
         self.bank = bank
         self.router = Router(registry)
 
-        # Tweak by dataset sizes
+        # Modality sampling weights
         self.modality_weights = {
-            "CT": 0.18, "MRI": 0.18, "X-ray": 0.20, "US": 0.12,
-            "Histology": 0.12, "Retina-Fundus": 0.06, "Retina-OCT": 0.04,
-            "Gross": 0.05, "Cell-Microscopy": 0.05,
+            "CT": 0.22,   # 略抬高 CT/MRI 以便多些注册类和多图
+            "MRI": 0.22,
+            "X-ray": 0.18,
+            "US": 0.10,
+            "Histology": 0.12,
+            "Retina-Fundus": 0.06,
+            "Retina-OCT": 0.04,
+            "Gross": 0.03,
+            "Cell-Microscopy": 0.03,
         }
 
     def sample_modality(self) -> str:
@@ -474,47 +475,111 @@ class ScenarioPlanner:
 
     def valid_chains_for_modality(self, modality: str) -> List[ChainType]:
         if modality in ["CT", "MRI"]:
-            return [ChainType.COMPLETE_IMAGING, ChainType.DIAGNOSTIC, ChainType.COMPARATIVE]
+            return [
+                ChainType.COMPLETE_IMAGING,
+                ChainType.COMPARATIVE,
+                ChainType.DIAGNOSTIC,
+                ChainType.REPORT_SUMMARY_QA,
+                ChainType.ANALYSIS_QA,
+                ChainType.SEGMENT_SUMMARY_QA,
+                ChainType.RANDOM_MIX,  # 仅 CT/MRI 支持随机混合（含注册）
+            ]
         if modality in ["X-ray", "US"]:
-            return [ChainType.DIAGNOSTIC]
-        return [ChainType.DIAGNOSTIC]
+            return [
+                ChainType.DIAGNOSTIC,
+                ChainType.REPORT_SUMMARY_QA,
+                ChainType.ANALYSIS_QA,
+                ChainType.SEGMENT_SUMMARY_QA,
+            ]
+        if modality in ["Histology", "Retina-Fundus", "Retina-OCT", "Gross", "Cell-Microscopy"]:
+            return [
+                ChainType.DIAGNOSTIC,
+                ChainType.REPORT_SUMMARY_QA,
+                ChainType.ANALYSIS_QA,
+                ChainType.SEGMENT_SUMMARY_QA,
+            ]
+        return [
+            ChainType.DIAGNOSTIC,
+            ChainType.REPORT_SUMMARY_QA,
+            ChainType.ANALYSIS_QA,
+        ]
 
     def valid_scenarios_for(self, chain: ChainType, modality: str) -> List[ConversationScenario]:
         if chain == ChainType.COMPLETE_IMAGING:
             return [ConversationScenario.SINGLE_IMAGE]
         if chain == ChainType.DIAGNOSTIC:
-            return [ConversationScenario.SINGLE_IMAGE, ConversationScenario.SWITCH_IMAGE_MID]
-        if chain == ChainType.COMPARATIVE and modality in ["CT", "MRI"]:
-            return [ConversationScenario.REGISTRATION_FROM_START, ConversationScenario.REGISTRATION_ADD_LATER]
+            # 更偏向中途换图，增加多图片占比
+            return [ConversationScenario.SWITCH_IMAGE_MID, ConversationScenario.SINGLE_IMAGE]
+        if chain == ChainType.COMPARATIVE:
+            if modality in ["CT", "MRI"]:
+                return [ConversationScenario.REGISTRATION_FROM_START, ConversationScenario.REGISTRATION_ADD_LATER]
+            return []
+        if chain == ChainType.RANDOM_MIX:
+            # 先 QA 后 Registration，自然是“后加第二张图”
+            return [ConversationScenario.REGISTRATION_ADD_LATER]
         return [ConversationScenario.SINGLE_IMAGE]
 
     def plan(self) -> Tuple[ChainType, ConversationScenario, str, List[str]]:
+        # 1) Pick modality
         modality = self.sample_modality()
-        chain_type = random.choice(self.valid_chains_for_modality(modality))
-        scenarios = self.valid_scenarios_for(chain_type, modality) or [ConversationScenario.SINGLE_IMAGE]
-        scenario = random.choice(scenarios)
 
+        # 2) Pick chain (短链 & RANDOM_MIX 概率更高，全流程略低)
+        chains = self.valid_chains_for_modality(modality)
+        weights = []
+        for ch in chains:
+            if ch in [ChainType.REPORT_SUMMARY_QA, ChainType.ANALYSIS_QA, ChainType.SEGMENT_SUMMARY_QA]:
+                weights.append(2.0)   # 短链偏高
+            elif ch == ChainType.RANDOM_MIX:
+                weights.append(2.2)   # 随机混合更高，鼓励“跨任务 + 多图”
+            elif ch == ChainType.COMPLETE_IMAGING:
+                weights.append(0.7)   # 全流程稍降
+            else:
+                weights.append(1.0)
+        chain_type = random.choices(chains, weights=weights, k=1)[0]
+
+        # 3) Pick scenario (在 DIAGNOSTIC 里更倾向 SWITCH_IMAGE_MID)
+        scenarios = self.valid_scenarios_for(chain_type, modality)
+        if not scenarios:
+            chain_type = ChainType.DIAGNOSTIC
+            scenarios = [ConversationScenario.SWITCH_IMAGE_MID, ConversationScenario.SINGLE_IMAGE]
+        # 加权：SWITCH_IMAGE_MID 更大概率
+        if chain_type == ChainType.DIAGNOSTIC and len(scenarios) == 2:
+            scenario = random.choices(scenarios, weights=[1.7, 1.0], k=1)[0]
+        else:
+            scenario = random.choice(scenarios)
+
+        # 4) Convert chain tasks → tools via router
         tools: List[str] = []
         for task in CHAIN_TASKS[chain_type]:
             tool = self.router.route_chain_task(task, modality)
             if tool:
                 tools.append(tool)
 
+        # ensure at least 2 steps; otherwise fallback
         if len(tools) < 2:
-            # Simple safe pair fallback
-            if modality == "US":
+            if modality in ["US"]:
                 tools = ["UltraSAM", "LLaVA-Rad"]
             elif modality in ["CT", "MRI", "X-ray"]:
                 tools = ["BiomedClip", "LLaVA-Rad"]
             elif modality in ["Histology", "Cell-Microscopy"]:
-                tools = (["CONCH", "PMC-LLaMA"] if "CONCH" in self.registry else ["DSMIL", "PMC-LLaMA"])
+                tools = ["CONCH" if self.registry.has("CONCH") else "DSMIL", "PMC-LLaMA"]
             else:
                 tools = ["BiomedClip", "PMC-LLaMA"]
             chain_type = ChainType.DIAGNOSTIC
-            scenario = ConversationScenario.SINGLE_IMAGE
+            scenario = ConversationScenario.SWITCH_IMAGE_MID  # fallback 也倾向多图
 
         return chain_type, scenario, modality, tools
 
+# ===============================
+# Single-Round Example Bank
+# ===============================
+
+class EnhancedSingleRoundBank:
+    def __init__(self, root: Union[str, Path]):
+        self.extractor = RealDataExtractor(root)
+
+    def get_example(self, tool_name: str) -> Optional[ToolExample]:
+        return self.extractor.get_random_example(tool_name)
 
 # ===============================
 # Conversation Builder
@@ -532,16 +597,20 @@ class ScenarioAwareBuilder:
         state = ConvState(session_id=str(uuid.uuid4()), scenario=scenario, chain_type=chain_type, modality=modality)
         conversations: List[Dict[str, Any]] = []
 
+        # Anchor first image via first tool example
         first_example = self.bank.get_example(planned_tools[0])
         if not first_example:
             return {}
-
         primary = self._primary_image_path(first_example.image_path)
         state.base_image_id = first_example.image_id
         state.base_image_path = primary
-        state.all_image_paths = [primary] if primary else []
 
-        # Build all tool turns
+        state.all_image_paths = [primary] if primary else []
+        state.has_second_image = False
+        state.second_image_added_at_turn = -1
+        state.image_switch_turn = -1
+
+        # ===== 构造每一轮 =====
         for i, tool_name in enumerate(planned_tools):
             turn = self._build_turn(tool_name, state, i, planned_tools)
             if not turn:
@@ -549,16 +618,14 @@ class ScenarioAwareBuilder:
             conversations.extend(turn)
             state.tool_history.append(tool_name)
 
+        # ===== 校验 =====
         if not self._validate_conversation(conversations, state):
             return {}
 
         image_field: Union[str, List[str]] = state.all_image_paths[0] if len(state.all_image_paths) == 1 else state.all_image_paths
-        return {
-            "image": image_field,
-            "conversations": conversations
-        }
+        return {"image": image_field, "conversations": conversations}
 
-    # ---- helpers ----
+    # ---------- helpers ----------
     def _primary_image_path(self, image: Union[str, List[str], None]) -> Optional[str]:
         if isinstance(image, list):
             return image[0] if image else None
@@ -596,29 +663,33 @@ class ScenarioAwareBuilder:
         clean_prompt = ex.input_prompt.strip()
         tool = self.registry[tool_name]
 
-        # Turn 0: always introduce first image
+        # -------- 首轮 --------
         if turn_idx == 0:
             if tool.requires_two_images:
-                # need 2 images now
+                # 直接引入两张图（配准等）
                 second = self.bank.extractor.get_different_image(state.all_image_paths)
                 if second:
                     self._add_image_to_state(state, second)
                     state.has_second_image = True
                     state.second_image_added_at_turn = 0
                 return f"{self._emit_image_tags(2)}{clean_prompt}"
-            return f"{self._emit_image_tags(1)}{clean_prompt}"
+            else:
+                # 普通：引入首图
+                return f"{self._emit_image_tags(1)}{clean_prompt}"
 
-        # Mid switch image (Scenario 4)
-        if state.scenario == ConversationScenario.SWITCH_IMAGE_MID and turn_idx == 2 and state.image_switch_turn == -1:
-            diff = self.bank.extractor.get_different_image(state.all_image_paths)
-            if diff:
-                self._add_image_to_state(state, diff)
-                state.image_switch_turn = turn_idx
-                return f"Now I have a different image to analyze. {self._emit_image_tags(1)}{clean_prompt}"
-            return self._followup(clean_prompt)
+        # -------- 随机/指定的中途换图 --------
+        if state.scenario == ConversationScenario.SWITCH_IMAGE_MID and state.image_switch_turn == -1:
+            # 倾向在第 2 轮换图（或首次可换的轮次）
+            if turn_idx in [1, 2]:
+                diff = self.bank.extractor.get_different_image(state.all_image_paths)
+                if diff:
+                    self._add_image_to_state(state, diff)
+                    state.image_switch_turn = turn_idx
+                    return f"I now have a different image to analyze. {self._emit_image_tags(1)}{clean_prompt}"
 
-        # Add second image later (Scenario 3)
-        if tool.requires_two_images and not state.has_second_image:
+        # -------- 迟加第二张图（注册类/RANDOM_MIX） --------
+        if (tool.requires_two_images and not state.has_second_image) or \
+           (state.scenario == ConversationScenario.REGISTRATION_ADD_LATER and not state.has_second_image and canonical_tool_name(tool_name) == "UniGradICON"):
             second = self.bank.extractor.get_different_image(state.all_image_paths)
             if second:
                 self._add_image_to_state(state, second)
@@ -626,7 +697,7 @@ class ScenarioAwareBuilder:
                 state.second_image_added_at_turn = turn_idx
                 return f"Now I have a second image. {self._emit_image_tags(1)}Register this new scan with the previous one."
 
-        # Reuse existing images (no new tag)
+        # -------- 其余情况：复用已有图片，不打 tag --------
         return self._followup(clean_prompt)
 
     def _followup(self, text: str) -> str:
@@ -653,8 +724,13 @@ class ScenarioAwareBuilder:
             "value": f"I'll use {ex.tool_name} to complete this request based on our current analysis."
         }
 
+    MAX_TOOL_OUTPUT_CHARS = 1200  # 轻量截断，防止后续步骤失败
+
     def _create_tool_output(self, tool_name: str, raw_output: str, original_prompt: str) -> str:
-        return f"{tool_name} output: {raw_output}\n\nAnswer my first request: {original_prompt}"
+        s = raw_output or ""
+        if len(s) > self.MAX_TOOL_OUTPUT_CHARS:
+            s = s[:self.MAX_TOOL_OUTPUT_CHARS] + f"\n...[TRUNCATED {len(raw_output)-self.MAX_TOOL_OUTPUT_CHARS} chars]"
+        return f"{tool_name} output: {s}\n\nAnswer my first request: {original_prompt}"
 
     def _create_final_response(self, ex: ToolExample, state: ConvState) -> Dict[str, Any]:
         thoughts = f"Based on the {ex.tool_name} output, I can now provide a comprehensive answer."
@@ -679,9 +755,12 @@ class ScenarioAwareBuilder:
             "grounding dino": "object_grounding",
             "MedSAM": "medical_segmentation",
             "grounding dino + MedSAM": "grounded_segmentation",
+            # "ChatCAD-G": "medical_report",
             "ChatCAD-R": "rag_medical_response",
             "CONCH": "tissue_classification",
             "DSMIL": "tumor_detection",
+            "DSMIL-TCGA": "tumor_detection",
+            "DSMIL-C16": "tumor_detection",
             "CellViT": "cell_segmentation",
             "CellSAM": "wsi_segmentation",
         }
@@ -697,48 +776,54 @@ class ScenarioAwareBuilder:
         state.add_context(f"{t} generated {a_type}")
 
     def _validate_conversation(self, conversations: List[Dict[str, Any]], state: ConvState) -> bool:
-        # Count image tags in human turns
-        tag_count = sum(
-            conv.get("value", "").count("<image>") for conv in conversations if conv.get("from") == "human"
-        )
+        # Count <image> tags
+        tag_count = 0
+        for conv in conversations:
+            if conv.get("from") == "human":
+                tag_count += conv.get("value", "").count("<image>")
+
         if tag_count != len(state.all_image_paths):
-            # Must match exactly
+            print(f"Tag/image mismatch: {tag_count} tags vs {len(state.all_image_paths)} images")
             return False
 
-        # Registration scenarios: CT/MRI and >=2 images
+        # Registration scenarios must be CT/MRI with >=2 images
         if state.scenario in [ConversationScenario.REGISTRATION_FROM_START, ConversationScenario.REGISTRATION_ADD_LATER]:
             if state.modality not in ["CT", "MRI"]:
+                print("Registration scenarios only valid for CT/MRI.")
                 return False
             if len(state.all_image_paths) < 2:
+                print("Registration scenarios require 2 images.")
                 return False
 
-        # Pathology should not involve radiology-only registration
+        # Pathology should not use radiology-only tools
         if state.modality in ["Histology", "Histology-WSI", "Histology-Patch", "Cell-Microscopy"]:
             forbidden = {"LLaVA-Rad", "UniGradICON"}
             if any(t in forbidden for t in state.tool_history):
+                print("Pathology chain included radiology-only tools.")
                 return False
 
-        # At least 2 tool calls overall
+        # at least 2 tool calls
         if len([c for c in conversations if c.get("from") == "gpt" and c.get("actions")]) < 2:
+            print("Chain too short after filtering.")
             return False
 
         return True
 
-
 # ===============================
-# Orchestration
+# Builder function & CLI
 # ===============================
 
 def build_enhanced_conversation(registry: ToolRegistry, bank: EnhancedSingleRoundBank) -> Dict[str, Any]:
     planner = ScenarioPlanner(registry, bank)
     builder = ScenarioAwareBuilder(registry, bank)
+
     chain_type, scenario, modality, tools = planner.plan()
     try:
-        return builder.build_conversation(chain_type, scenario, modality, tools)
+        convo = builder.build_conversation(chain_type, scenario, modality, tools)
+        return convo
     except Exception as e:
         print(f"Error building {scenario.value} conversation: {e}")
         return {}
-
 
 def infer_scenario_from_conversation(conversation: Dict[str, Any]) -> ConversationScenario:
     image_field = conversation.get("image")
@@ -749,7 +834,6 @@ def infer_scenario_from_conversation(conversation: Dict[str, Any]) -> Conversati
             c = conv.get("value", "").count("<image>")
             if c > 0:
                 image_tag_pattern.append(c)
-
     if isinstance(image_field, list) and len(image_field) >= 2:
         if image_tag_pattern and image_tag_pattern[0] >= 2:
             return ConversationScenario.REGISTRATION_FROM_START
@@ -763,17 +847,13 @@ def infer_scenario_from_conversation(conversation: Dict[str, Any]) -> Conversati
                         return ConversationScenario.SWITCH_IMAGE_MID
     return ConversationScenario.SINGLE_IMAGE
 
-
 def main():
-    ap = argparse.ArgumentParser(description="Generate modality-aware multi-tool multi-round dialogues")
-    ap.add_argument("--tool_yaml", type=str, required=True, help="Path to tool metadata YAML")
-    ap.add_argument("--single_round_dir", type=str, required=True, help="Path to single-round per-tool examples")
-    ap.add_argument("--out", type=str, required=True, help="Output .jsonl file")
-    ap.add_argument("--num", type=int, required=True, help="Number of conversations to generate")
-    ap.add_argument("--seed", type=int, default=1337, help="Random seed for reproducibility")
-    args = ap.parse_args()
-
-    random.seed(args.seed)
+    parser = argparse.ArgumentParser(description="Generate modality-aware multi-tool multi-round dialogues")
+    parser.add_argument("--tool_yaml", type=str, required=True, help="Path to tool metadata YAML")
+    parser.add_argument("--single_round_dir", type=str, required=True, help="Path to single-round examples directory")
+    parser.add_argument("--out", type=str, required=True, help="Output file path (.jsonl)")
+    parser.add_argument("--num", type=int, required=True, help="Number of conversations to generate")
+    args = parser.parse_args()
 
     registry = ToolRegistry(args.tool_yaml)
     bank = EnhancedSingleRoundBank(args.single_round_dir)
@@ -813,14 +893,11 @@ def main():
         pct = (c / len(conversations) * 100) if conversations else 0
         print(f"  {s.value}: {c} ({pct:.1f}%)")
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
+    with open(args.out, "w", encoding="utf-8") as f:
         for conv in conversations:
             f.write(json.dumps(conv, ensure_ascii=False) + "\n")
 
     print(f"\nSaved {len(conversations)} conversations to {args.out}")
-
 
 if __name__ == "__main__":
     main()

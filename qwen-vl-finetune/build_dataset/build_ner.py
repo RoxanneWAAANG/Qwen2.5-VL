@@ -3,9 +3,9 @@ import random
 from tqdm import tqdm
 
 INPUT_FILE = "/home/jack/Projects/yixin-llm/yixin-llm-data/instruct_dataset/RaTE-NER/train_span.json"
-OUTPUT_FILE = "./tool_instruct/rate_ner_dataset.jsonl"
-IMAGE_BASE_PATH = "/home/jack/Projects/yixin-llm/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images"
-DUMMY_IMAGE_NAME = "dummy_medical_ner.jpg"
+OUTPUT_FILE = "/home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Medical_Agent_Instruction_Tuning/tool_instruct/rate_ner_dataset.jsonl"
+IMAGE_BASE_PATH = "dummy_images"
+DUMMY_IMAGE_NAME = "dummy_img.png"
 MAX_SAMPLES = 5000
 
 prompt_templates = [
@@ -168,9 +168,9 @@ def transform(ex, idx):
     friendly_reply = random.choice(answer_templates).format(entities=formatted_entities)
     
     return {
-        "image_id": image_id,
-        "image": image_filename,
-        "file_name": full_path,
+        # "image_id": image_id,
+        "image": f"/home/jack/Projects/yixin-llm/yixin-llm-data/multi_round/Qwen2.5-VL/qwen-vl-finetune/build_dataset/dummy_images/dummy_img.png",
+        # "file_name": full_path,
         "conversations": [
             {
                 "from": "human",
@@ -182,7 +182,7 @@ def transform(ex, idx):
                 "actions": [
                     {
                         "API_name": "RaTE-NER",
-                        "API_params": {"text": sentence_text}
+                        "API_params": {"query": sentence_text}
                     }
                 ],
                 "value": "Calling RaTE-NER tool to identify and classify medical entities..."

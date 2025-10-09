@@ -1,0 +1,156 @@
+======================================================================
+ERROR ANALYSIS REPORT
+======================================================================
+
+Total Error Samples: 301
+Error Rate: 20.07%
+
+Error Type Distribution:
+----------------------------------------------------------------------
+  missing_some_tools: 171 (56.8%)
+  missing_all_tools: 97 (32.2%)
+  wrong_tools: 33 (11.0%)
+
+======================================================================
+Tool-Specific Errors:
+----------------------------------------------------------------------
+
+  BiomedClip:
+    Missed (should have called): 8
+    Hallucinated (incorrectly called): 10
+
+  CONCH:
+    Missed (should have called): 13
+    Hallucinated (incorrectly called): 1
+
+  CellSAM:
+    Missed (should have called): 2
+    Hallucinated (incorrectly called): 0
+
+  DSMIL-C16:
+    Missed (should have called): 8
+    Hallucinated (incorrectly called): 1
+
+  DSMIL-TCGA:
+    Missed (should have called): 4
+    Hallucinated (incorrectly called): 3
+
+  HealthGPT:
+    Missed (should have called): 18
+    Hallucinated (incorrectly called): 0
+
+  IterNet:
+    Missed (should have called): 3
+    Hallucinated (incorrectly called): 0
+
+  LLaVA:
+    Missed (should have called): 171
+    Hallucinated (incorrectly called): 0
+
+  LLaVA-Med:
+    Missed (should have called): 40
+    Hallucinated (incorrectly called): 2
+
+  LLaVA-Rad:
+    Missed (should have called): 2
+    Hallucinated (incorrectly called): 0
+
+  MedSAM:
+    Missed (should have called): 1
+    Hallucinated (incorrectly called): 5
+
+  MidYixin:
+    Missed (should have called): 0
+    Hallucinated (incorrectly called): 1
+
+  RaTE-NER:
+    Missed (should have called): 1
+    Hallucinated (incorrectly called): 0
+
+  RealBeast:
+    Missed (should have called): 0
+    Hallucinated (incorrectly called): 1
+
+  SpecialistVLMs:
+    Missed (should have called): 7
+    Hallucinated (incorrectly called): 3
+
+  UltraSAM:
+    Missed (should have called): 18
+    Hallucinated (incorrectly called): 0
+
+  grounding dino:
+    Missed (should have called): 3
+    Hallucinated (incorrectly called): 6
+
+  grounding dino + MedSAM:
+    Missed (should have called): 2
+    Hallucinated (incorrectly called): 0
+
+======================================================================
+Example Errors by Type:
+----------------------------------------------------------------------
+
+MISSING_ALL_TOOLS:
+
+  Example 1 (Conv 0, Turn 1):
+    Ground Truth: ['LLaVA-Med']
+    Predicted: []
+    Input: 
+What type of tumor is shown in the image?
+
+  Example 2 (Conv 28, Turn 1):
+    Ground Truth: ['BiomedClip']
+    Predicted: []
+    Input: 
+ Can you identify the imaging modality of this image?
+
+  Example 3 (Conv 31, Turn 1):
+    Ground Truth: ['LLaVA-Med']
+    Predicted: []
+    Input: Provide a detailed description of the given image
+
+
+MISSING_SOME_TOOLS:
+
+  Example 1 (Conv 1, Turn 0):
+    Ground Truth: ['MedSAM', 'LLaVA-Rad', 'LLaVA']
+    Predicted: ['MedSAM', 'LLaVA-Rad']
+    Input: 
+Please review this scan and explain the key findings.
+
+  Example 2 (Conv 4, Turn 0):
+    Ground Truth: ['MedSAM', 'LLaVA-Rad', 'LLaVA']
+    Predicted: ['MedSAM', 'LLaVA-Rad']
+    Input: 
+Please review this chest X-ray and tell me what matters most.
+
+  Example 3 (Conv 6, Turn 0):
+    Ground Truth: ['UniGradICON', 'LLaVA-Rad', 'LLaVA']
+    Predicted: ['UniGradICON', 'LLaVA-Rad']
+    Input: 
+
+How did the findings change after therapy?
+
+WRONG_TOOLS:
+
+  Example 1 (Conv 34, Turn 1):
+    Ground Truth: ['UltraSAM']
+    Predicted: ['MedSAM']
+    Input: 
+
+Outline the area inside [336.0, 123.0, 488.0, 266.0] on ultrasound image.
+
+  Example 2 (Conv 48, Turn 1):
+    Ground Truth: ['DSMIL-C16']
+    Predicted: ['BiomedClip']
+    Input: 
+ Is tumor present in this image?
+
+
+
+  Example 3 (Conv 77, Turn 1):
+    Ground Truth: ['grounding dino + MedSAM']
+    Predicted: ['grounding dino']
+    Input: Can you identify the tumor location and segment it in this MRI brain image? 
+

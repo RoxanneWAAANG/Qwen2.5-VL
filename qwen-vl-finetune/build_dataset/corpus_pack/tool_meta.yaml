@@ -75,6 +75,14 @@ DSMIL:
   modalities: ["Histology","Histology-WSI","Histology-Patch"]
   tasks: ["tumor_detection","analysis"]
 
+DSMIL-TCGA:
+  modalities: ["Histology","Histology-WSI","Histology-Patch"]
+  tasks: ["tumor_detection","analysis"]
+
+DSMIL-C16:
+  modalities: ["Histology","Histology-WSI","Histology-Patch"]
+  tasks: ["tumor_detection","analysis"]
+
 CellViT:
   modalities: ["Cell-Microscopy"]
   tasks: ["cell_segmentation","analysis"]

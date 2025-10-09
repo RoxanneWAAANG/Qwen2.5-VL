@@ -1,0 +1,12 @@
+Tool Call Evaluation Summary
+======================================================================
+
+Tool Call Accuracy: 0.9037
+Whole Case Accuracy: 0.7993
+Exact Match Rate: 0.8774
+Partial Match Rate: 0.8774
+Tool Call Coverage: 0.4287
+
+Correct Conversations: 1199 / 1500
+Correct Tool Calls: 2825 / 3126
+Error Samples: 301
