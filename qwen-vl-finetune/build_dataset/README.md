@@ -81,53 +81,7 @@ Daily Dialogue → User Request → Assistant Tool Call → Tool Output → Assi
 ```
 
 ### Scenario Types
-
-#### Scenario A: Parameter Refinement (Optinal)
-**Use Case**: User requests parameter adjustments for better results
-
-```json
-{
-  "session_id": "one_tool_001",
-  "image_id": "sample_002",
-  "image": "/path/to/ct_scan.jpg", 
-  "file_name": "/path/to/ct_scan.jpg",
-  "conversations": [
-    {
-      "from": "human", 
-      "value": "<image>\nSegment the liver in this CT scan"
-    },
-    {
-      "from": "gpt",
-      "thoughts": "I'll use UltraSAM to segment the liver region.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
-      "value": "I'll segment the liver region using UltraSAM."
-    },
-    {
-      "from": "human",
-      "value": "UltraSAM output: Liver segmentation complete but includes some adjacent tissues.\n\nThe segmentation is too broad. Can you make it more precise?"
-    },
-    {
-      "from": "gpt",
-      "thoughts": "I need to refine the segmentation with more specific parameters.",
-      "actions": [{"API_name": "UltraSAM", "API_params": {}}],
-      "value": "I'll refine the segmentation with higher precision to focus specifically on liver tissue."
-    },
-    {
-      "from": "human",
-      "value": "UltraSAM output: Segmentation complete. Lung regions identified with 95% accuracy.\n\nAnswer my first request: Segment the lung regions in this chest X-ray"
-    },
-    {
-      "from": "gpt",
-      "thoughts": "Based on the UltraSAM output, I can provide the segmentation results.",
-      "actions": [],
-      "value": "The lung segmentation has been completed successfully."
-    }
-  ]
-}
-```
-
-#### Scenario B: Progressive Enhancement
-**Use Case**: Add daily dialogue for diversity.
+**Use Case**: Add daily dialogue at the beginning or end of the conversation for diversity.
 
 ```json
 {
